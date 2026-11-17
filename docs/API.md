@@ -48,3 +48,27 @@
 恢复不绕过能力授权、50 回合或全局 1000 会话上限，不自动清空满额会话。当前客户端尚无多会话选择/新会话管理 UI。后台仍是单开发令牌映射一个 owner，不冒充生产多账号登录。
 
 客户端同主体点击不请求；切回主体、断开后连接并选择主体，从后端恢复消息（服务重启亦有效）。未发送草稿仅保留在当前应用进程内，按规范化 endpoint、令牌与主体隔离；切换服务/令牌会清空草稿，断开会隐藏并清空可见输入。草稿不上传、不落盘，应用重启不恢复草稿。旧聊天历史不会离线缓存显示。长对话发送成功自动滚动到底部。
+
+## 跨主体发现 v0.7
+
+`POST /v1/discovery`，认证方式不变。请求二选一：
+
+```json
+{"prompt":"你能做什么","context":{"zone":"demo-world","renderers":["capability-card"]}}
+```
+
+或用 `serviceId` 替代 prompt（如 `local.report`）。不能同时传两者。prompt 最长 4000 字符，zone 为非空字符串最长 200，renderers 最多 20 个非空字符串、每项最长 100。未知服务标识返回 404；不认识的自然语言返回 needs_clarification 而不执行代码/模糊猜测。
+
+返回包含 `planner`（demo-rules/explicit-service）、`simulation:true`、`executed:false`、`status`（proposed/needs_choice/unavailable/needs_clarification）、`candidates` 和 `unavailable`。候选为 `{creatureId,name,service}`；不可用项额外包含 `reason`（outside_simulated_activity_space/renderer_unavailable）。只包含当前认证 owner 的 active 且挂载该能力的主体。不返回其他 owner 的主体；body ownerId 不改变认证身份。`service` 为同一公共服务目录的描述，包含输入名称、效果与 renderer。
+
+这是只读发现，不自动执行、不创建会话。不因唯一匹配便取得执行许可；调用方明确选择后须另行 `POST /v1/invocations`，该入口重新检查所有边界。服务可能有必需输入，如 conversation 还需要该主体下已授权 sessionId 与 message。规划结果不是已完成回执。
+
+验证示例（APP_TOKEN 由操作者安全设置，不写进文档）：
+
+```sh
+curl --fail-with-body -s http://127.0.0.1:8080/v1/discovery \
+  -H "Authorization: Bearer $APP_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"prompt":"菜单","context":{"zone":"demo-restaurant","renderers":["menu-card"]}}'
+```
+
+菜单数据仍是演示夹具。全局发现当前尚未接入 Flutter 交互入口。

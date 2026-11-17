@@ -35,3 +35,11 @@ No testing server or mock provider was left running. Android/iOS generated defau
 - Widget regressions cover already-selected no-op, A→B→A, draft preservation, disconnect/reconnect, changed-token draft isolation, and a 30-message newest-reply visibility check. The bounded conversation scroll body lays out all turns so scroll extent is exact.
 - Web release compiled again. Native packaging and visual browser QA remain unverified. No real model or paid service used.
 - Known limits: drafts are process-memory only; no multi-session UI/automatic rotation for the 50-round limit; connection ambiguity still requires checking saved history before resending a potentially committed call.
+
+## v0.7 owner-scoped cross-subject service discovery (2026-11-17)
+
+- `npm test`: 28 passing. Four new scenarios cover registry discovery without preselected subject, active/owner/capability/spatial/rendering boundaries, dynamic grants/revocation/retirement, invalid and unknown requests, and a real authenticated HTTP discovery→explicit selection→invocation sequence.
+- Discovery is asserted not to mutate the persistent snapshot or invoke a model. A proposal obtained before capability revocation cannot bypass invocation checks.
+- `flutter analyze`: no issues; `flutter test`: 11 passing. The existing real Dart client→Node restart test now also invokes global discovery and verifies multiple choices include the persisted subject.
+- Client production source and platform shells are unchanged from v0.6; Web release was not rebuilt in this backend-focused iteration. The previously verified v0.6 client remains the current UI version. Global discovery is not yet a Flutter screen.
+- No external model, paid API, third-party service market, physical location, hardware connector or real-world action was used. Native/visual browser verification remains open.

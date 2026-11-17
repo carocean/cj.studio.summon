@@ -69,6 +69,24 @@ void main() {
           body: {'creatureId': creature['id']},
         );
         expect(repeated['id'], session['id']);
+        final discovery = await api.request(
+          '/v1/discovery',
+          body: {
+            'prompt': '你能做什么',
+            'context': {
+              'zone': 'demo-world',
+              'renderers': ['capability-card'],
+            },
+          },
+        );
+        expect(discovery['status'], 'needs_choice');
+        expect(discovery['executed'], false);
+        expect(
+          (discovery['candidates'] as List).any(
+            (c) => c['creatureId'] == creature['id'],
+          ),
+          isTrue,
+        );
         final plan = await api.request(
           '/v1/plans',
           body: {'creatureId': creature['id'], 'prompt': '你能做什么'},

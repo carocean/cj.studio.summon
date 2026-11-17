@@ -54,6 +54,7 @@ export function createApi(runtime, { appToken, ownerId = 'local-owner', kernel =
         }
         throw new DomainError(404, 'not_found');
       }
+      if (req.method === 'POST' && req.url === '/v1/discovery') return send(200, scheduler.discoverAcross(ownerId, await readBody(req)));
       const discovery = /^\/v1\/creatures\/([a-zA-Z0-9-]+)\/services$/.exec(req.url);
       if (req.method === 'GET' && discovery) return send(200, { services: scheduler.discover(ownerId, discovery[1]) });
       if (req.method === 'POST' && req.url === '/v1/invocations') return send(200, await scheduler.invoke(ownerId, await readBody(req)));
