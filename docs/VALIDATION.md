@@ -26,3 +26,12 @@ The TLS test requires OpenSSL in PATH. Temporary test certificates and synthetic
 - `flutter doctor -v`: not an all-green environment. Android SDK is absent; Linux desktop toolchain is incomplete; Chrome needs explicit executable selection in this environment; its proxy-interface diagnostic crashed. These do not invalidate the above checks, but native builds and interactive browser QA are not claimed.
 
 No testing server or mock provider was left running. Android/iOS generated default icons remain placeholders rather than final product branding.
+
+## v0.6 session recovery regression (2026-11-17)
+
+- Flutter analyze: no issues; Flutter tests: 11 passing (API, widget and actual HTTP).
+- Node tests: 24 passing. Durable resume tested after reopening the store, repeatedly at session capacity, with owner/lifecycle rejection and immutable returned history.
+- The real Dart→Node test now terminates and restarts the Node process on the same store, re-discovers the session by creature, and verifies identical ID and saved turns. This is real local persistence, still demo model output.
+- Widget regressions cover already-selected no-op, A→B→A, draft preservation, disconnect/reconnect, changed-token draft isolation, and a 30-message newest-reply visibility check. The bounded conversation scroll body lays out all turns so scroll extent is exact.
+- Web release compiled again. Native packaging and visual browser QA remain unverified. No real model or paid service used.
+- Known limits: drafts are process-memory only; no multi-session UI/automatic rotation for the 50-round limit; connection ambiguity still requires checking saved history before resending a potentially committed call.

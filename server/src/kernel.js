@@ -94,6 +94,12 @@ export class Kernel {
       state.sessions[session.id] = session; return session;
     });
   }
+  resumeSession(ownerId, subjectId, maxSessions = 1000) {
+    this.getSubject(ownerId, subjectId); // Ownership/lifecycle checked even on reuse.
+    const existing = Object.values(this.state.sessions).reverse()
+      .find(s => s.ownerId === ownerId && s.creatureId === subjectId);
+    return existing ? structuredClone(existing) : this.createSession(ownerId, subjectId, maxSessions);
+  }
   getSession(ownerId, id) {
     const session = this.state.sessions[id];
     if (!session || session.ownerId !== ownerId) throw new DomainError(404, 'session_not_found');

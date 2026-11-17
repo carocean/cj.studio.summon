@@ -28,6 +28,13 @@ export class Runtime {
     this.#sessions.set(session.id, session);
     return this.#public(session);
   }
+  resumeSession(ownerId, creatureId) {
+    this.getCreature(ownerId, creatureId);
+    if (this.kernel) return this.#public(this.kernel.resumeSession(ownerId, creatureId, this.maxSessions));
+    const existing = [...this.#sessions.values()].reverse()
+      .find(s => s.ownerId === ownerId && s.creatureId === creatureId);
+    return existing ? this.#public(existing) : this.createSession(ownerId, creatureId);
+  }
   #owned(ownerId, id) {
     if (this.kernel) return this.kernel.getSession(ownerId, id);
     const session = this.#sessions.get(id);

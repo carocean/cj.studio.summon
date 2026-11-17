@@ -52,6 +52,11 @@ test('HTTP authentication and complete local round trip', async () => {
     assert.equal(created.status, 201); const session = await created.json();
     const called = await fetch(base + `/v1/sessions/${session.id}/calls`, { method: 'POST', headers, body: JSON.stringify({ message: 'hello' }) });
     assert.equal(called.status, 200); assert.equal((await called.json()).turns.length, 2);
+    const resumed = await fetch(base + '/v1/sessions/resume', { method: 'POST', headers, body: JSON.stringify({ creatureId: 'guide', ownerId: 'attacker' }) });
+    const restored = await resumed.json();
+    assert.equal(restored.id, session.id); assert.equal(restored.turns.length, 2);
+    assert.equal(Object.hasOwn(restored, 'ownerId'), false);
+    assert.equal((await fetch(base + '/v1/sessions/resume', { method: 'POST', body: JSON.stringify({creatureId:'guide'}) })).status, 401);
     assert.equal((await fetch(base + '/v1/sessions', { method: 'POST', headers, body: '{' })).status, 400);
     assert.equal((await fetch(base + '/v1/sessions', { method: 'POST', headers, body: JSON.stringify({ message: 'a'.repeat(17000) }) })).status, 413);
   } finally { await new Promise(resolve => server.close(resolve)); }

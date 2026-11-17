@@ -102,3 +102,24 @@ test('kernel HTTP exposes persistent primitives only behind authentication', asy
     assert.equal(state.results.length, 1);
   } finally { await new Promise(r => server.close(r)); f.done(); }
 });
+
+test('resume survives restart, reuses capacity, isolates owners and rechecks lifecycle', () => {
+  const f = setup();
+  try {
+    f.k.bootstrap('a'); f.k.bootstrap('b');
+    const a = f.k.list('a').subjects[0];
+    const s = f.k.resumeSession('a', a.id, 1);
+    f.k.appendTurn('a', s.id, 0, {role:'user',content:'saved'}, {role:'assistant',content:'reply'});
+    f.restart();
+    for (let i = 0; i < 20; i++) {
+      const restored = f.k.resumeSession('a', a.id, 1);
+      assert.equal(restored.id, s.id); assert.equal(restored.turns[0].content, 'saved');
+      restored.turns.length = 0;
+    }
+    assert.equal(Object.keys(f.k.state.sessions).length, 1);
+    assert.throws(() => f.k.resumeSession('b', a.id), {code:'subject_not_found'});
+    assert.throws(() => f.k.getSession('b', s.id), {code:'session_not_found'});
+    f.k.transition('a', a.id, 'paused');
+    assert.throws(() => f.k.resumeSession('a', a.id), {code:'subject_not_active'});
+  } finally { f.done(); }
+});

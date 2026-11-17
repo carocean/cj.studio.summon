@@ -61,6 +61,10 @@ export function createApi(runtime, { appToken, ownerId = 'local-owner', kernel =
         const body = await readBody(req);
         return send(200, scheduler.resolve(ownerId, body?.creatureId, body?.prompt));
       }
+      if (req.method === 'POST' && req.url === '/v1/sessions/resume') {
+        const body = await readBody(req);
+        return send(200, runtime.resumeSession(ownerId, body?.creatureId));
+      }
       if (req.method === 'POST' && req.url === '/v1/sessions') {
         const body = await readBody(req);
         return send(201, runtime.createSession(ownerId, body?.creatureId));
