@@ -16,7 +16,7 @@ async function readBody(req) {
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new DomainError(400, 'invalid_json'); }
 }
-export function createApi(runtime, { appToken, ownerId = 'local-owner' }) {
+export function createApi(runtime, { appToken, ownerId = 'local-owner', kernel = null }) {
   if (!appToken || appToken.length < 24) throw new Error('APP_TOKEN must contain at least 24 characters');
   const scheduler = new ServiceScheduler(runtime);
   return createServer(async (req, res) => {
@@ -28,6 +28,21 @@ export function createApi(runtime, { appToken, ownerId = 'local-owner' }) {
       if (req.method === 'GET' && req.url === '/health') return send(200, { status: 'ok', mode: runtime.provider.mode });
       if (!equals(req.headers.authorization || '', `Bearer ${appToken}`)) throw new DomainError(401, 'unauthorized');
       if (req.method === 'GET' && req.url === '/v1/creatures') return send(200, { creatures, mode: runtime.provider.mode });
+      if (req.url?.startsWith('/v1/kernel/')) {
+        if (!kernel) throw new DomainError(503, 'kernel_unavailable');
+        if (req.method === 'GET' && req.url === '/v1/kernel/state') return send(200, kernel.list(ownerId));
+        if (req.method === 'POST') {
+          const body = await readBody(req);
+          if (!body || typeof body !== 'object' || Array.isArray(body)) throw new DomainError(400, 'invalid_payload');
+          if (req.url === '/v1/kernel/subjects') return send(201, kernel.createSubject(ownerId, body));
+          if (req.url === '/v1/kernel/transitions') return send(200, kernel.transition(ownerId, body.subjectId, body.status));
+          if (req.url === '/v1/kernel/mounts') return send(200, kernel.mount(ownerId, body.subjectId, body.serviceId, body.enabled));
+          if (req.url === '/v1/kernel/tasks') return send(201, kernel.schedule(ownerId, body));
+          if (req.url === '/v1/kernel/signals') return send(200, kernel.signal(ownerId, body));
+          if (req.url === '/v1/kernel/cancellations') return send(200, kernel.cancel(ownerId, body.taskId));
+        }
+        throw new DomainError(404, 'not_found');
+      }
       const discovery = /^\/v1\/creatures\/([a-zA-Z0-9-]+)\/services$/.exec(req.url);
       if (req.method === 'GET' && discovery) return send(200, { services: scheduler.discover(discovery[1]) });
       if (req.method === 'POST' && req.url === '/v1/invocations') return send(200, await scheduler.invoke(ownerId, await readBody(req)));
