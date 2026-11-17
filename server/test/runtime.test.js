@@ -62,3 +62,18 @@ test('legacy conversation route cannot bypass creature service boundary', async 
   const s = r.createSession('a', 'restaurant');
   await assert.rejects(r.call('a', s.id, 'hi'), { code: 'outside_service_boundary' });
 });
+
+test('development CORS is exact-origin opt-in and never removes authentication', async () => {
+  const token = 'cors-test-token-abcdefghijklmnopqrstuvwxyz';
+  assert.throws(() => createApi(new Runtime(new DemoProvider()), { appToken: token, corsOrigin: '*' }));
+  assert.throws(() => createApi(new Runtime(new DemoProvider()), { appToken: token, corsOrigin: 'https://example.com' }));
+  const server = createApi(new Runtime(new DemoProvider()), { appToken: token, corsOrigin: 'http://localhost:7357' });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const preflight = await fetch(base + '/v1/creatures', { method: 'OPTIONS', headers: { Origin: 'http://localhost:7357' } });
+    assert.equal(preflight.status, 204); assert.equal(preflight.headers.get('access-control-allow-origin'), 'http://localhost:7357');
+    assert.equal((await fetch(base + '/v1/creatures', { headers: { Origin: 'http://localhost:7357' } })).status, 401);
+    assert.equal((await fetch(base + '/v1/creatures', { method: 'OPTIONS', headers: { Origin: 'http://localhost:9999' } })).status, 403);
+  } finally { await new Promise(r => server.close(r)); }
+});

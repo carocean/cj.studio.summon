@@ -2,7 +2,7 @@
 
 独立的 AI 主体与能力运行系统，Flutter 客户端，服务端连接可替换 LLM。
 
-**当前为 v0.4.0 本地原型，不是已上线产品。** 后端的主体选择 → 创建会话 → 调用 → 返回结果闭环已通过本地 HTTP 测试。Flutter 仅有源码，尚未编译；真实 LLM 尚未联调。
+**当前为 v0.5.0 本地原型，不是已上线产品。** 后端的主体选择 → 创建会话 → 调用 → 返回结果闭环已通过本地 HTTP 测试。Flutter 已通过静态分析、9 项客户端测试与 Web release 编译，并完成 Dart 客户端到本地后端的真实 HTTP 联调；Android/iOS 原生包与真实 LLM 尚未验证。
 
 ## 产品主线
 
@@ -23,14 +23,15 @@
 ```sh
 cd server
 npm test
-APP_TOKEN="$(openssl rand -hex 24)" npm start
+export APP_TOKEN="$(openssl rand -hex 24)"
+npm start
 ```
 
 请自行保存该开发令牌并在客户端输入。服务默认只监听 `127.0.0.1:8080`，不暴露公网。无 LLM 密钥时默认 `demo`，回复始终标明“演示模式”。
 
-真实模型配置预留为 `LLM_MODE=llm`、`LLM_ENDPOINT`、`LLM_MODEL`、`LLM_API_KEY`，仅在服务端提供。接口使用 Chat Completions 兼容结构，当前仅契约桩测试通过，不保证任意供应商兼容。不得把密钥放入移动端、聊天或仓库。
+真实模型配置预留为 `LLM_MODE=llm`、`LLM_ENDPOINT`、`LLM_MODEL`、`LLM_API_KEY`，仅在服务端提供。接口使用 Chat Completions 兼容结构，已通过注入契约测试及真实 HTTPS 到本地兼容 Mock 的联调，但没有外部供应商或真实模型验证。不得把密钥放入移动端、聊天或仓库。
 
-Flutter SDK 准备后，在 `app/` 执行 `flutter create --platforms=android,ios .` 生成平台外壳，再执行 `flutter pub get`、`flutter analyze`、`flutter test`。目前没有平台外壳、锁文件、SDK 或移动端验证，不应当称作可安装 App。Android 模拟器访问宿主机通常须配置对应地址，真机需另行配置受保护的网络入口。不要直接把此原型开放到公网。
+Flutter 3.50+ / Dart 3.14+ 准备后，在 `app/` 执行 `flutter pub get`、`flutter analyze`、`flutter test`、`flutter build web --release`。平台外壳、锁文件与测试已纳入仓库。网页开发需要后端明确设置本地 CORS origin，步骤见 [客户端说明](app/README.md)。原生 Android/iOS 未构建或签名，不应称为可安装手机 App。不要直接把此原型开放到公网。
 
 ## 当前边界
 
@@ -50,3 +51,5 @@ Flutter SDK 准备后，在 `app/` 执行 `flutter create --platforms=android,io
 `KERNEL_STORE` 可指定数据文件路径，默认从 server 工作目录写入 `../data/kernel.json`。不要把该目录提交仓库。不要同时启动两个写同一文件的进程。
 
 当前生产服务使用统一持久主体目录：首次启动自动种入三个模板主体，之后用户创建的主体也出现在客户端列表中；重启不会重新授予已经撤销的能力。会话 API 支持按 ID 恢复消息，客户端自动恢复尚待实现。
+
+精确构建版本、Mock 与真实接口的区别见 [验证记录](docs/VALIDATION.md)。

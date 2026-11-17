@@ -9,7 +9,10 @@ if (!process.env.APP_TOKEN || process.env.APP_TOKEN.length < 24) throw new Error
 const provider = mode === 'demo' ? new DemoProvider() : new CompatibleProvider({ endpoint: process.env.LLM_ENDPOINT, apiKey: process.env.LLM_API_KEY, model: process.env.LLM_MODEL });
 const kernel = new Kernel(resolve(process.env.KERNEL_STORE || '../data/kernel.json'));
 kernel.bootstrap('local-owner');
-const api = createApi(new Runtime(provider, { kernel }), { appToken: process.env.APP_TOKEN, kernel });
+let api;
+try {
+  api = createApi(new Runtime(provider, { kernel }), { appToken: process.env.APP_TOKEN, kernel, corsOrigin: process.env.DEV_CORS_ORIGIN || null });
+} catch (error) { kernel.close(); throw error; }
 const ticker = setInterval(() => {
   try { kernel.tick(); } catch { console.error('Kernel tick failed; local task state retained. Inspect storage availability.'); }
 }, 1000);

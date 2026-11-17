@@ -1,11 +1,17 @@
-import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:http/http.dart' as http;
+import 'api.dart';
 
-void main() => runApp(const MaterialApp(home: SummonHome()));
+void main() => runApp(MaterialApp(
+      theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff385C58)),
+          useMaterial3: true),
+      home: const SummonHome(),
+    ));
 
 class SummonHome extends StatefulWidget {
-  const SummonHome({super.key});
+  const SummonHome({super.key, this.client});
+  final http.Client? client;
   @override
   State<SummonHome> createState() => _SummonHomeState();
 }
@@ -14,75 +20,217 @@ class _SummonHomeState extends State<SummonHome> {
   final _base = TextEditingController(text: 'http://127.0.0.1:8080');
   final _token = TextEditingController();
   final _input = TextEditingController();
-  final _client = http.Client();
-  List<dynamic> _creatures = [], _turns = [];
+  late final http.Client _client;
+  SummonApi? _api;
+  List<dynamic> _creatures = [], _turns = [], _services = [];
   String? _session;
-  Map<String, dynamic>? _creature, _serviceResult;
-  String _status = '未连接。仅本地原型，不提供定位或现实动作。';
+  Map<String, dynamic>? _creature;
+  String _status = '连接自己的开发服务，唤起一个主体。';
+  String _mode = '未连接';
   bool _busy = false;
+  bool get _canTalk => (_creature?['aibm']['serviceAbilities'] as List? ?? [])
+      .contains('conversation');
 
-  Future<Map<String, dynamic>> _request(String path, {Map<String, dynamic>? body}) async {
-    final uri = Uri.parse('${_base.text.trim()}$path');
-    final headers = {'Authorization': 'Bearer ${_token.text}', 'Content-Type': 'application/json'};
-    final response = await (body == null
-        ? _client.get(uri, headers: headers)
-        : _client.post(uri, headers: headers, body: jsonEncode(body)))
-        .timeout(const Duration(seconds: 25));
-    if (response.statusCode >= 400) throw Exception('请求失败 (${response.statusCode})');
-    return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+  @override
+  void initState() {
+    super.initState();
+    _client = widget.client ?? http.Client();
+  }
+
+  void _reset() {
+    _api = null;
+    _session = null;
+    _creature = null;
+    _creatures = [];
+    _services = [];
+    _turns = [];
+    _mode = '未连接';
   }
 
   Future<void> _run(Future<void> Function() action) async {
     if (_busy) return;
     setState(() => _busy = true);
-    try { await action(); }
-    catch (_) { if (mounted) setState(() => _status = '连接或调用失败，请检查服务与令牌后重试。'); }
-    finally { if (mounted) setState(() => _busy = false); }
+    try {
+      await action();
+    } on ApiFailure catch (e) {
+      if (mounted) {
+        setState(() => _status =
+            e.status == 401 ? '令牌无效，请断开后重新连接。' : '请求未完成：${e.code}。请检查状态后重试。');
+      }
+    } catch (_) {
+      if (mounted) setState(() => _status = '连接或调用失败，输入已保留，请检查服务后重试。');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _connect() async {
+    setState(_reset);
+    final api =
+        SummonApi(endpoint: _base.text, token: _token.text, client: _client);
+    final data = await api.request('/v1/creatures');
+    if (!mounted) return;
+    setState(() {
+      _api = api;
+      _creatures = data['creatures'] as List;
+      _mode = data['mode'] as String;
+      _status = '选择主体。服务能力由运行内核决定。';
+    });
+  }
+
+  Future<void> _select(dynamic creature) async {
+    final s = await _api!
+        .request('/v1/sessions', body: {'creatureId': creature['id']});
+    if (!mounted) return;
+    setState(() {
+      _session = s['id'] as String;
+      _creature = Map<String, dynamic>.from(creature);
+      _services = [];
+      _turns = [];
+      _input.clear();
+      _status = '已唤起 ${creature['name']}';
+    });
+  }
+
+  Future<void> _describe() async {
+    final plan = await _api!.request('/v1/plans',
+        body: {'creatureId': _creature!['id'], 'prompt': '你能做什么'});
+    if (plan['status'] != 'proposed') {
+      if (mounted) setState(() => _status = '该主体未提供能力自述服务。');
+      return;
+    }
+    final result = await _api!.request('/v1/invocations', body: {
+      'creatureId': _creature!['id'],
+      'serviceId': plan['serviceId'],
+      'arguments': plan['arguments'],
+      'context': {
+        'zone': _creature!['aibm']['activitySpace']['zones'][0],
+        'renderers': ['capability-card']
+      }
+    });
+    if (mounted) {
+      setState(() {
+        _services = result['data']['services'] as List;
+        _status = '已读取当前注册能力';
+      });
+    }
+  }
+
+  Future<void> _send() async {
+    if (_input.text.trim().isEmpty) return;
+    final data = await _api!.request('/v1/sessions/$_session/calls',
+        body: {'message': _input.text});
+    if (!mounted) return;
+    setState(() {
+      _turns = data['turns'] as List;
+      _input.clear();
+      _status = '本次交流已保存';
+    });
   }
 
   @override
-  void dispose() { _base.dispose(); _token.dispose(); _input.dispose(); _client.close(); super.dispose(); }
+  void dispose() {
+    _base.dispose();
+    _token.dispose();
+    _input.dispose();
+    if (widget.client == null) _client.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Summon · 唤起')),
-    body: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
-      TextField(controller: _base, enabled: !_busy, decoration: const InputDecoration(labelText: '本地服务地址')),
-      TextField(controller: _token, enabled: !_busy, obscureText: true, decoration: const InputDecoration(labelText: '开发访问令牌（不是 LLM 密钥）')),
-      FilledButton(onPressed: _busy ? null : () => _run(() async {
-        final data = await _request('/v1/creatures');
-        if (!mounted) return;
-        setState(() { _creatures = data['creatures'] as List; _session = null; _creature = null; _serviceResult = null; _turns = []; _status = '模式：${data['mode']}'; });
-      }), child: const Text('连接')),
-      Text(_status),
-      Wrap(spacing: 8, children: _creatures.map((c) => OutlinedButton(
-        onPressed: _busy ? null : () => _run(() async {
-          final s = await _request('/v1/sessions', body: {'creatureId': c['id']});
-          if (!mounted) return;
-          setState(() { _session = s['id'] as String; _creature = Map<String, dynamic>.from(c); _serviceResult = null; _turns = []; _status = '已唤起 ${c['name']} · 空间为模拟'; });
-        }), child: Text(c['name'] as String))).toList()),
-      if (_creature != null) FilledButton(onPressed: _busy ? null : () => _run(() async {
-        final plan = await _request('/v1/plans', body: {'creatureId': _creature!['id'], 'prompt': '你能做什么'});
-        if (plan['status'] != 'proposed') return;
-        final result = await _request('/v1/invocations', body: {
-          'creatureId': _creature!['id'], 'serviceId': plan['serviceId'], 'arguments': plan['arguments'],
-          'context': {'zone': _creature!['aibm']['activitySpace']['zones'][0], 'renderers': ['capability-card']}
-        });
-        if (mounted) setState(() => _serviceResult = result);
-      }), child: const Text('呼叫：你能做什么')),
-      if (_serviceResult != null) SizedBox(height: 140, child: SingleChildScrollView(child: Card(child: Padding(
-        padding: const EdgeInsets.all(12), child: Text(const JsonEncoder.withIndent('  ').convert(_serviceResult!['data'])))))),
-      Expanded(child: ListView.builder(itemCount: _turns.length, itemBuilder: (context, i) => ListTile(
-        title: Text(_turns[i]['content'] as String), subtitle: Text(_turns[i]['role'] as String)))),
-      if (_busy) const LinearProgressIndicator(),
-      Row(children: [Expanded(child: TextField(controller: _input, enabled: !_busy && _session != null,
-        decoration: const InputDecoration(hintText: '与这个主体交流'), maxLength: 4000)),
-        IconButton(icon: const Icon(Icons.send), onPressed: _busy || _session == null || !(_creature?['aibm']['serviceAbilities'] as List? ?? []).contains('conversation') ? null : () => _run(() async {
-          if (_input.text.trim().isEmpty) return;
-          final data = await _request('/v1/sessions/$_session/calls', body: {'message': _input.text});
-          if (!mounted) return;
-          setState(() { _turns = data['turns'] as List; _input.clear(); });
-        }))]),
-    ])),
-  );
+        appBar: AppBar(title: const Text('Summon · 唤起'), actions: [
+          if (_api != null)
+            TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                          _reset();
+                          _status = '已断开，服务端主体与任务仍可持续运行。';
+                        }),
+                child: const Text('断开')),
+        ]),
+        body: SafeArea(
+            child: Column(children: [
+          if (_busy) const LinearProgressIndicator(),
+          Expanded(
+              child: ListView(padding: const EdgeInsets.all(16), children: [
+            Text('主体与服务运行空间', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(_mode == 'demo' ? '演示模式 · 未连接真实 LLM' : '运行模式：$_mode',
+                key: const Key('mode')),
+            const Text('位置为模拟。没有真实广播、支付或设备控制。'),
+            if (_api == null) ...[
+              TextField(
+                  key: const Key('endpoint'),
+                  controller: _base,
+                  enabled: !_busy,
+                  decoration: const InputDecoration(labelText: '服务地址')),
+              TextField(
+                  key: const Key('token'),
+                  controller: _token,
+                  enabled: !_busy,
+                  obscureText: true,
+                  decoration:
+                      const InputDecoration(labelText: '开发访问令牌（不是 LLM 密钥）')),
+              FilledButton(
+                  onPressed: _busy ? null : () => _run(_connect),
+                  child: const Text('连接')),
+            ],
+            const SizedBox(height: 12),
+            Text(_status, key: const Key('status')),
+            const SizedBox(height: 12),
+            Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _creatures
+                    .map((c) => ChoiceChip(
+                          label: Text(c['name'] as String),
+                          selected: _creature?['id'] == c['id'],
+                          onSelected:
+                              _busy ? null : (_) => _run(() => _select(c)),
+                        ))
+                    .toList()),
+            if (_creature != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton(
+                  onPressed: _busy ? null : () => _run(_describe),
+                  child: const Text('呼叫：你能做什么')),
+              ..._services.map((s) => Card(
+                  child: ListTile(
+                      title: Text(s['title'] as String),
+                      subtitle: Text('${s['id']} · ${s['effect']}')))),
+              if (!_canTalk)
+                const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text('该主体未挂载对话能力，不能发送自由聊天。')),
+            ],
+            ..._turns.map((t) => Card(
+                child: ListTile(
+                    title: Text(t['content'] as String),
+                    subtitle: Text(t['role'] == 'user'
+                        ? '你'
+                        : _creature?['name'] as String? ?? '主体')))),
+          ])),
+          Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              child: Row(children: [
+                Expanded(
+                    child: TextField(
+                        key: const Key('message'),
+                        controller: _input,
+                        enabled: !_busy && _session != null && _canTalk,
+                        decoration: const InputDecoration(
+                            hintText: '与这个主体交流', border: OutlineInputBorder()),
+                        maxLength: 4000)),
+                IconButton(
+                    key: const Key('send'),
+                    tooltip: '发送',
+                    icon: const Icon(Icons.send),
+                    onPressed: _busy || _session == null || !_canTalk
+                        ? null
+                        : () => _run(_send)),
+              ])),
+        ])),
+      );
 }
