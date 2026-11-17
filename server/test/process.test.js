@@ -29,6 +29,13 @@ test('running server ticks without client action, then restores state after rest
     };
     const subject = await post('subjects', { name: 'persistent process subject' });
     await post('mounts', { subjectId: subject.id, serviceId: 'local.report', enabled: true });
+    await post('mounts', { subjectId: subject.id, serviceId: 'conversation', enabled: true });
+    const apiBase = proc.base.replace('/kernel/', '/');
+    const directory = await (await fetch(apiBase + 'creatures', { headers })).json();
+    assert.ok(directory.creatures.some(c => c.id === subject.id));
+    const session = await (await fetch(apiBase + 'sessions', { method: 'POST', headers, body: JSON.stringify({ creatureId: subject.id }) })).json();
+    const called = await fetch(apiBase + `sessions/${session.id}/calls`, { method: 'POST', headers, body: JSON.stringify({ message: 'persist this conversation' }) });
+    assert.equal(called.status, 200);
     await post('tasks', { subjectId: subject.id, serviceId: 'local.report', trigger: { kind: 'timer', at: Date.now() } });
     // No tick endpoint or client request drives execution. Wait for server clock.
     await new Promise(r => setTimeout(r, 1300));
@@ -37,8 +44,11 @@ test('running server ticks without client action, then restores state after rest
     await stop(proc.child); proc = null;
     proc = await start(join(dir, 'store.json'));
     state = await (await fetch(proc.base + 'state', { headers })).json();
-    assert.equal(state.subjects[0].id, subject.id);
+    assert.ok(state.subjects.some(s => s.id === subject.id));
     assert.equal(state.results.length, 1);
     assert.equal(state.tasks[0].status, 'completed');
+    const restoredSession = await (await fetch(proc.base.replace('/kernel/', '/') + `sessions/${session.id}`, { headers })).json();
+    assert.equal(restoredSession.turns.length, 2);
+    assert.equal(restoredSession.turns[0].content, 'persist this conversation');
   } finally { if (proc) await stop(proc.child); rmSync(dir, { recursive: true, force: true }); }
 });

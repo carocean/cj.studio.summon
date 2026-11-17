@@ -10,7 +10,7 @@ test('same call discovers and dispatches actual distinct creature capabilities',
   const s = scheduler();
   const results = [];
   for (const creatureId of ['companion', 'restaurant']) {
-    const plan = s.resolve(creatureId, '你能做什么');
+    const plan = s.resolve('owner', creatureId, '你能做什么');
     assert.equal(plan.executed, false);
     const result = await s.invoke('owner', { ...plan, context: { zone: creatureId === 'companion' ? 'demo-world' : 'demo-restaurant', renderers: ['capability-card'] } });
     assert.equal(result.demo, false); // real registry inspection, not LLM or canned prose
@@ -37,7 +37,7 @@ test('menu and preview use explicit fixtures, calculate totals and never submit'
 });
 test('ambiguous or out-of-bound prompts require clarification; no action occurs', () => {
   const s = scheduler();
-  assert.equal(s.resolve('restaurant', '帮我处理一下').status, 'needs_clarification');
-  assert.equal(s.resolve('companion', '菜单').status, 'needs_clarification');
-  assert.equal(s.resolve('restaurant', '菜单').serviceId, 'menu.read');
+  assert.equal(s.resolve('owner', 'restaurant', '帮我处理一下').status, 'needs_clarification');
+  assert.equal(s.resolve('owner', 'companion', '菜单').status, 'needs_clarification');
+  assert.equal(s.resolve('owner', 'restaurant', '菜单').serviceId, 'menu.read');
 });
