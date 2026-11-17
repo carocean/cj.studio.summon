@@ -1,0 +1,7 @@
+.env
+*.key
+node_modules/
+.dart_tool/
+build/
+app/.flutter-plugins*
+data/

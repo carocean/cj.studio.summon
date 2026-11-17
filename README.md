@@ -1,2 +1,44 @@
-# cj.studio.summon
-Summon: a callable operating environment for AI creatures, with a Flutter client and LLM-connected backend.
+# cj.studio.summon · 唤起
+
+独立的 AI 主体与能力运行系统，Flutter 客户端，服务端连接可替换 LLM。
+
+**当前为 v0.2.0 本地原型，不是已上线产品。** 后端的主体选择 → 创建会话 → 调用 → 返回结果闭环已通过本地 HTTP 测试。Flutter 仅有源码，尚未编译；真实 LLM 尚未联调。
+
+## 产品主线
+
+用户面对的是可识别、可持续交互的 AI 主体，而非只选择一个模型。模型是主体可使用的生成引擎；能力、权限、会话、状态与将来的空间关系由运行系统管理。现有调度器开放对话、真实能力自述、演示菜单和点餐预览，不允许模型直接执行现实动作。
+
+这是一项依据 [GeoChat BP](https://github.com/carocean/cj.studio.geochat.bp/blob/main/BP.md) 启动的新工程。已进一步核实独立 AIWatch BP：AIOS 是 Calling Operating System，直接以 AI 服务而非传统 App 组织能力；服务属于 AI 生物，按呼唤理解、发现和调度。它不等同 GeoOS，也不等同对话界面。来源、工程解释与实现范围见 [产品基线](docs/PRODUCT.md)。
+
+## 子项目
+
+- `server/`：主体运行时、会话、调用入口和模型适配器。首轮采用无第三方运行依赖的 Node.js，便于验证协议与闭环；不是对长期后端架构的锁定。
+- `app/`：Flutter 客户端源码，主体列表、唤起、会话视图和明确的演示模式。
+- `docs/`：产品基线、接口和验证记录。
+
+## 本地运行
+
+需要 Node.js 22+：
+
+```sh
+cd server
+npm test
+APP_TOKEN="$(openssl rand -hex 24)" npm start
+```
+
+请自行保存该开发令牌并在客户端输入。服务默认只监听 `127.0.0.1:8080`，不暴露公网。无 LLM 密钥时默认 `demo`，回复始终标明“演示模式”。
+
+真实模型配置预留为 `LLM_MODE=llm`、`LLM_ENDPOINT`、`LLM_MODEL`、`LLM_API_KEY`，仅在服务端提供。接口使用 Chat Completions 兼容结构，当前仅契约桩测试通过，不保证任意供应商兼容。不得把密钥放入移动端、聊天或仓库。
+
+Flutter SDK 准备后，在 `app/` 执行 `flutter create --platforms=android,ios .` 生成平台外壳，再执行 `flutter pub get`、`flutter analyze`、`flutter test`。目前没有平台外壳、锁文件、SDK 或移动端验证，不应当称作可安装 App。Android 模拟器访问宿主机通常须配置对应地址，真机需另行配置受保护的网络入口。不要直接把此原型开放到公网。
+
+## 当前边界
+
+- 单一开发账号令牌，不是多用户认证系统；领域层有会话所有者隔离。
+- 会话仅保存在内存，重启即清空，尚无长期记忆和持久化。
+- 空间模式只是主体元数据，没有读取真实定位、地图/AR 或实际跟随能力。
+- 没有工具执行、支付、外部消息或设备控制。
+- 模型请求有超时与输出检查；尚无生产限流、账单预算、上游响应字节限制和审计系统。
+- “AI 生物”是产品称谓，不代表已证实意识、生命或自显场。
+
+下一步及已验证事项见 [STATE](docs/STATE.md)。
