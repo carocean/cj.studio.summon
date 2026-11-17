@@ -87,6 +87,45 @@ void main() {
           ),
           isTrue,
         );
+        final selected = (discovery['candidates'] as List).first;
+        final invocation = {
+          'creatureId': selected['creatureId'],
+          'serviceId': selected['service']['id'],
+          'arguments': <String, dynamic>{},
+          'context': {
+            'zone': 'demo-world',
+            'renderers': ['capability-card'],
+          },
+        };
+        final receipt = await api.request('/v1/invocations', body: invocation);
+        expect(receipt['status'], 'completed');
+        expect(receipt['data']['name'], selected['name']);
+        await api.request(
+          '/v1/kernel/mounts',
+          body: {
+            'subjectId': selected['creatureId'],
+            'serviceId': selected['service']['id'],
+            'enabled': false,
+          },
+        );
+        await expectLater(
+          api.request('/v1/invocations', body: invocation),
+          throwsA(
+            isA<ApiFailure>().having(
+              (e) => e.code,
+              'code',
+              'outside_service_boundary',
+            ),
+          ),
+        );
+        await api.request(
+          '/v1/kernel/mounts',
+          body: {
+            'subjectId': selected['creatureId'],
+            'serviceId': selected['service']['id'],
+            'enabled': true,
+          },
+        );
         final plan = await api.request(
           '/v1/plans',
           body: {'creatureId': creature['id'], 'prompt': '你能做什么'},

@@ -43,3 +43,12 @@ No testing server or mock provider was left running. Android/iOS generated defau
 - `flutter analyze`: no issues; `flutter test`: 11 passing. The existing real Dart client→Node restart test now also invokes global discovery and verifies multiple choices include the persisted subject.
 - Client production source and platform shells are unchanged from v0.6; Web release was not rebuilt in this backend-focused iteration. The previously verified v0.6 client remains the current UI version. Global discovery is not yet a Flutter screen.
 - No external model, paid API, third-party service market, physical location, hardware connector or real-world action was used. Native/visual browser verification remains open.
+
+## v0.8 Flutter global calling entry (2026-11-17)
+
+- `flutter analyze`: no issues; `flutter test`: 18 passed; `flutter build web --release`: passed (0.8.0+8).
+- Six dedicated discovery widget scenarios verify discover/select without execution, explicit selected invocation, edited prompt invalidating candidates, failed rediscovery, revoked stale proposal, unavailable/unknown intent, duplicate pending requests/disposal, and narrow 320×568 menu/space presentation (some scenarios cover multiple checks).
+- A navigation regression verifies entering/leaving global discovery preserves the chat subject, persisted history and private draft without creating another session or sending a conversation message.
+- The real Dart→Node test now also selects a discovery candidate, invokes its service, revokes the grant using the test kernel API and verifies the old selection receives `outside_service_boundary`. The fixture then restores the grant and completes existing checks. This is actual loopback HTTP, not a widget mock, but not a real device or model.
+- `npm test`: 28 passed; backend behavior remains unchanged in this client-focused iteration.
+- Browser screenshot/interactive visual QA and Android/iOS builds remain unverified. Widget tests and web compilation are not substitutes for those stages. No paid API, real model, physical location, external order or device action was used.

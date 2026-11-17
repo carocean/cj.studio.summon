@@ -242,6 +242,49 @@ void main() {
     expect(find.text('reply-29').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets(
+    'global discovery round trip leaves selected session and draft untouched',
+    (tester) async {
+      final paths = <String>[];
+      final client = MockClient((r) async {
+        paths.add(r.url.path);
+        if (r.url.path.endsWith('creatures')) {
+          return jsonResponse({
+            'creatures': [creature('a')],
+            'mode': 'demo',
+          });
+        }
+        if (r.url.path.endsWith('resume')) {
+          return jsonResponse({
+            'id': 'saved',
+            'turns': [
+              {'role': 'assistant', 'content': 'saved-history'},
+            ],
+          });
+        }
+        return jsonResponse({
+          'status': 'needs_clarification',
+          'candidates': [],
+          'unavailable': [],
+        });
+      });
+      await connect(tester, client);
+      await tester.tap(find.widgetWithText(ChoiceChip, '同行者'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('message')), 'private-draft');
+      await tester.tap(find.byKey(const Key('global-call')));
+      await tester.pumpAndSettle();
+      expect(find.text('private-draft'), findsNothing);
+      await tester.tap(find.byKey(const Key('discover-global')));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('private-draft'), findsOneWidget);
+      expect(find.text('saved-history'), findsOneWidget);
+      expect(paths.where((p) => p.endsWith('resume')).length, 1);
+      expect(paths.any((p) => p.endsWith('calls')), isFalse);
+    },
+  );
   testWidgets('small mobile viewport does not overflow', (tester) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;

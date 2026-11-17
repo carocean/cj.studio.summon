@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:http/http.dart' as http;
 
 import 'api.dart';
+import 'discovery.dart';
 
 void main() => runApp(
   MaterialApp(
@@ -193,6 +194,19 @@ class _SummonHomeState extends State<SummonHome> {
     appBar: AppBar(
       title: const Text('Summon · 唤起'),
       actions: [
+        if (_api != null)
+          IconButton(
+            key: const Key('global-call'),
+            tooltip: '全局呼唤',
+            icon: const Icon(Icons.travel_explore),
+            onPressed: _busy
+                ? null
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => DiscoveryPage(api: _api!),
+                    ),
+                  ),
+          ),
         if (_api != null)
           TextButton(
             onPressed: _busy

@@ -1,7 +1,7 @@
 name: summon_app
 description: Summon AI creature runtime client prototype
 publish_to: none
-version: 0.6.0+6
+version: 0.8.0+8
 environment:
   sdk: '>=3.14.0 <4.0.0'
   flutter: '>=3.50.0'

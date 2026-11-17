@@ -1,1 +1,1 @@
-{"name":"@cj.studio/summon-server","version":"0.7.0","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"test":"node --test","start":"node src/main.js"}}
+{"name":"@cj.studio/summon-server","version":"0.8.0","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"test":"node --test","start":"node src/main.js"}}

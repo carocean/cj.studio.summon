@@ -72,3 +72,7 @@ curl --fail-with-body -s http://127.0.0.1:8080/v1/discovery \
 ```
 
 菜单数据仍是演示夹具。全局发现当前尚未接入 Flutter 交互入口。
+
+### v0.8 客户端接入
+
+Flutter 全局呼唤页面现使用上述 discovery→用户选择→独立 invocation 流程。全局页面不调用 sessions API；只对能力自述、演示菜单和本地回执开放明确调用按钮。旧候选无权绕过后端撤权检查。此前 v0.7 “仅 API 入口”的限制不再适用于 v0.8。
