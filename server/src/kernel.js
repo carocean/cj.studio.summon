@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DomainError } from './runtime.js';
+import { DomainError, creatures, serviceCatalog } from './model.js';
 
 const requireText = (v, max = 200) => {
   if (typeof v !== 'string' || !v.trim() || v.length > max) throw new DomainError(400, 'invalid_text');
@@ -11,7 +11,7 @@ const safeObject = v => {
   if (!v || typeof v !== 'object' || Array.isArray(v) || JSON.stringify(v).length > 4000) throw new DomainError(400, 'invalid_payload');
   return structuredClone(v);
 };
-const services = Object.freeze({
+const scheduledServices = Object.freeze({
   // Only pure, local result generation is supported. No external side effects.
   'local.report': { effect: 'local-only', description: '生成本地任务回执，不广播、不控制设备、不发消息。' },
 });
@@ -30,6 +30,10 @@ export class Kernel {
     try { mkdirSync(this.lock); } catch { throw new Error('Kernel store already locked; verify owner before recovery'); }
     try {
       this.state = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { version: 1, subjects: {}, tasks: {}, events: [], results: [], revision: 0 };
+      this.state.sessions ??= {};
+      for (const subject of Object.values(this.state.subjects || {})) {
+        if (typeof subject.aibm?.activitySpace === 'string') subject.aibm.activitySpace = { mode: subject.aibm.activitySpace, zones: ['demo-world'] };
+      }
       if (this.state.version !== 1 || !this.state.subjects || !this.state.tasks || !Array.isArray(this.state.events) || !Array.isArray(this.state.results)) throw new Error('Invalid kernel store');
     } catch (e) { rmSync(this.lock, { recursive: true }); throw e; }
   }
@@ -59,8 +63,51 @@ export class Kernel {
     if (!['fixed-simulation', 'follow-owner-simulation'].includes(activitySpace)) throw new DomainError(400, 'invalid_activity_space');
     return this.#commit(state => {
       if (Object.keys(state.subjects).length >= 1000) throw new DomainError(429, 'subject_capacity');
-      const subject = { id: randomUUID(), ownerId, name, status: 'active', aibm: { personality, activitySpace, serviceAbilities: [], renderingAbilities: ['receipt-card'] }, createdAt: this.clock() };
+      const subject = { id: randomUUID(), ownerId, name, role: 'custom', description: '用户创建的 AI 主体，仅可使用已挂载能力。', status: 'active', aibm: { personality, activitySpace: { mode: activitySpace, zones: ['demo-world'] }, serviceAbilities: [], renderingAbilities: ['receipt-card'] }, createdAt: this.clock() };
       state.subjects[subject.id] = subject; this.#event(state, 'subject.created', ownerId, subject.id); return subject;
+    });
+  }
+  bootstrap(ownerId) {
+    // Templates are only installed once per owner. Revoked grants stay revoked.
+    if (this.state.bootstrapOwners?.includes(ownerId)) return;
+    this.#commit(state => {
+      state.bootstrapOwners ??= [];
+      for (const template of creatures) {
+        const subject = { ...structuredClone(template), id: randomUUID(), templateId: template.id, ownerId, status: 'active', createdAt: this.clock() };
+        state.subjects[subject.id] = subject;
+      }
+      state.bootstrapOwners.push(ownerId);
+      return { initialized: true };
+    });
+  }
+  getSubject(ownerId, id, { requireActive = true } = {}) {
+    const subject = this.#subject(this.state, ownerId, id);
+    if (requireActive && subject.status !== 'active') throw new DomainError(409, 'subject_not_active');
+    return structuredClone(subject);
+  }
+  createSession(ownerId, subjectId, maxSessions = 1000) {
+    return this.#commit(state => {
+      const subject = this.#subject(state, ownerId, subjectId);
+      if (subject.status !== 'active') throw new DomainError(409, 'subject_not_active');
+      if (Object.keys(state.sessions).length >= maxSessions) throw new DomainError(429, 'session_capacity');
+      const session = { id: randomUUID(), ownerId, creatureId: subjectId, turns: [] };
+      state.sessions[session.id] = session; return session;
+    });
+  }
+  getSession(ownerId, id) {
+    const session = this.state.sessions[id];
+    if (!session || session.ownerId !== ownerId) throw new DomainError(404, 'session_not_found');
+    return structuredClone(session);
+  }
+  appendTurn(ownerId, id, expectedLength, user, assistant) {
+    return this.#commit(state => {
+      const session = state.sessions[id];
+      if (!session || session.ownerId !== ownerId) throw new DomainError(404, 'session_not_found');
+      const subject = this.#subject(state, ownerId, session.creatureId);
+      if (subject.status !== 'active') throw new DomainError(409, 'subject_not_active');
+      if (!subject.aibm.serviceAbilities.includes('conversation')) throw new DomainError(403, 'outside_service_boundary');
+      if (session.turns.length !== expectedLength) throw new DomainError(409, 'session_changed');
+      session.turns.push(user, assistant); return session;
     });
   }
   list(ownerId) {
@@ -77,12 +124,16 @@ export class Kernel {
     });
   }
   mount(ownerId, id, serviceId, enabled = true) {
-    if (!Object.hasOwn(services, serviceId) || typeof enabled !== 'boolean') throw new DomainError(400, 'unsupported_local_service');
+    if (!serviceCatalog.some(service => service.id === serviceId) || typeof enabled !== 'boolean') throw new DomainError(400, 'unsupported_local_service');
     return this.#commit(state => {
       const subject = this.#subject(state, ownerId, id);
       if (subject.status === 'retired') throw new DomainError(409, 'subject_retired');
       subject.aibm.serviceAbilities = subject.aibm.serviceAbilities.filter(s => s !== serviceId);
-      if (enabled) subject.aibm.serviceAbilities.push(serviceId);
+      if (enabled) {
+        subject.aibm.serviceAbilities.push(serviceId);
+        const renderer = serviceCatalog.find(service => service.id === serviceId).renderer;
+        if (!subject.aibm.renderingAbilities.includes(renderer)) subject.aibm.renderingAbilities.push(renderer);
+      }
       else for (const t of Object.values(state.tasks)) if (t.subjectId === id && t.serviceId === serviceId && !['completed','cancelled'].includes(t.status)) t.status = 'cancelled';
       this.#event(state, enabled ? 'service.mounted' : 'service.revoked', ownerId, id, { serviceId }); return subject;
     });
@@ -98,7 +149,7 @@ export class Kernel {
     return this.#commit(state => {
       const subject = this.#subject(state, ownerId, subjectId);
       if (subject.status !== 'active') throw new DomainError(409, 'subject_not_active');
-      if (!Object.hasOwn(services, serviceId) || !subject.aibm.serviceAbilities.includes(serviceId)) throw new DomainError(403, 'outside_service_boundary');
+      if (!Object.hasOwn(scheduledServices, serviceId) || !subject.aibm.serviceAbilities.includes(serviceId)) throw new DomainError(403, 'outside_service_boundary');
       if (Object.keys(state.tasks).length >= 1000) throw new DomainError(429, 'task_capacity');
       const task = { id: randomUUID(), ownerId, subjectId, serviceId, trigger: normalized, payload, minimumIntervalMs, status: 'scheduled', dueAt: normalized.kind === 'timer' ? normalized.at : null, lastRunAt: null, runs: 0 };
       state.tasks[task.id] = task; this.#event(state, 'task.scheduled', ownerId, subjectId, { taskId: task.id }); return task;
