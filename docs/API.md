@@ -19,3 +19,18 @@
 - `POST /v1/invocations`：`{"creatureId":"restaurant","serviceId":"capabilities.describe","arguments":{},"context":{"zone":"demo-restaurant","renderers":["capability-card"]}}`，返回结构化呈现结果。
 
 `context` 当前是模拟输入，绝不可用于生产地理授权。实际服务边界来自服务端固定 AIBM。菜单/预览是演示 fixture；只有能力自述实际查询当前运行时的注册数据。调用不存在的 order.submit 会被拒绝。
+
+## 持久内核 v0.3
+
+以下均为开发令牌鉴权、单所有者、本地无外部副作用接口：
+
+- `GET /v1/kernel/state`：持久主体、任务、回执。
+- `POST /v1/kernel/subjects`：`{"name":"固定主体","activitySpace":"fixed-simulation"}`。
+- `POST /v1/kernel/mounts`：`{"subjectId":"...","serviceId":"local.report","enabled":true}`；仅白名单纯本地执行器。
+- `POST /v1/kernel/transitions`：`{"subjectId":"...","status":"paused"}`；状态为 active / paused / retired，退役不可恢复。
+- `POST /v1/kernel/tasks`：`{"subjectId":"...","serviceId":"local.report","trigger":{"kind":"timer","at":<epoch-ms>,"intervalMs":60000},"payload":{"purpose":"本地回执"}}`。
+- 事件任务 trigger 可为 `{"kind":"event","type":"destination.approaching","repeat":false}`。
+- `POST /v1/kernel/signals`：`{"subjectId":"...","type":"destination.approaching"}`，明确模拟信号。
+- `POST /v1/kernel/cancellations`：`{"taskId":"..."}`。
+
+服务进程定时调用内核 tick，没有公开任意执行接口。默认周期不得少于 60 秒，可设更严格 minimumIntervalMs。撤销能力会取消未完成任务；暂停保留任务但不执行；单次任务完成后重复事件不再次执行。持续事件任务合并待执行信号，并限制最小间隔。
