@@ -1,0 +1,400 @@
+{
+  "fixture": "synthetic-focus-http.v1",
+  "before": {
+    "activeCreatureId": "companion",
+    "activity": null,
+    "choiceForms": {
+      "account": null,
+      "focus": {
+        "binding": {
+          "context": {
+            "creatureId": "companion",
+            "sceneRevision": 1
+          },
+          "grantGeneration": 1,
+          "grantRevision": 1,
+          "registryRevision": 6,
+          "serviceId": "synthetic.focus.v1",
+          "targetCreatureId": "companion"
+        },
+        "contractId": "synthetic-focus.v1",
+        "contractVersion": 1,
+        "fields": [
+          {
+            "id": "topic",
+            "label": "专注主题",
+            "options": [
+              {
+                "label": "学习",
+                "value": "study"
+              },
+              {
+                "label": "整理",
+                "value": "tidy"
+              },
+              {
+                "label": "写作",
+                "value": "write"
+              }
+            ],
+            "readOnly": false,
+            "required": true,
+            "type": "choice",
+            "value": null
+          },
+          {
+            "id": "duration",
+            "label": "计划时长（分钟）",
+            "options": [
+              {
+                "label": "5 分钟",
+                "value": "5"
+              },
+              {
+                "label": "15 分钟",
+                "value": "15"
+              },
+              {
+                "label": "25 分钟",
+                "value": "25"
+              }
+            ],
+            "readOnly": false,
+            "required": true,
+            "type": "choice",
+            "value": null
+          },
+          {
+            "id": "pace",
+            "label": "节奏偏好（不产生提醒）",
+            "options": [
+              {
+                "label": "平稳",
+                "value": "steady"
+              },
+              {
+                "label": "轻柔",
+                "value": "gentle"
+              }
+            ],
+            "readOnly": false,
+            "required": true,
+            "type": "choice",
+            "value": null
+          }
+        ],
+        "formId": "form-ae35122dea59573c1b5e1c6e99e8bc2d3f79c8f38825207ec1867da43a1dbef3",
+        "schema": "choice-form.v1"
+      },
+      "route": null
+    },
+    "context": {
+      "creatureId": "companion",
+      "sceneRevision": 1
+    },
+    "creatures": [
+      {
+        "body": "sprout",
+        "generation": 2,
+        "id": "companion",
+        "kind": "companion",
+        "name": "小伴",
+        "personality": "轻松、好奇的日常伙伴",
+        "senseGenerations": {
+          "hearing": 1,
+          "vision": 1
+        },
+        "senses": {
+          "hearing": true,
+          "vision": true
+        },
+        "tone": "playful"
+      },
+      {
+        "body": "owl",
+        "generation": 2,
+        "id": "work",
+        "kind": "business",
+        "name": "小谨",
+        "personality": "严谨、清楚的业务伙伴",
+        "senseGenerations": {
+          "hearing": 1,
+          "vision": 1
+        },
+        "senses": {
+          "hearing": true,
+          "vision": true
+        },
+        "tone": "precise"
+      }
+    ],
+    "focus": {
+      "activePlan": null,
+      "grant": {
+        "creatureId": "companion",
+        "enabled": true,
+        "generation": 1,
+        "revision": 1
+      },
+      "planWindow": 1,
+      "plans": [],
+      "primaryCreatureId": "companion",
+      "registryRevision": 6,
+      "requestCount": 0,
+      "requestLimit": 128,
+      "requestWindow": 4,
+      "requests": []
+    },
+    "market": {
+      "catalog": [
+        {
+          "mode": "synthetic-only",
+          "name": "演示地图伙伴",
+          "network": false,
+          "nodes": [
+            "A",
+            "B",
+            "C"
+          ],
+          "paid": false,
+          "productId": "demo.maps.v1",
+          "providerId": "demo-maps",
+          "serviceId": "synthetic.route.v1",
+          "serviceVersion": 1
+        }
+      ],
+      "receiptWindow": 8,
+      "receipts": [],
+      "requestCount": 0,
+      "requestLimit": 128,
+      "requests": [],
+      "subscriptions": []
+    },
+    "mode": "deterministic-synthetic",
+    "presentation": {
+      "activityId": null,
+      "activityRevision": null,
+      "body": "sprout",
+      "context": "personal",
+      "creatureId": "companion",
+      "schema": "creature-scene.v1",
+      "source": "deterministic-policy",
+      "surface": "none",
+      "tone": "playful"
+    },
+    "primaryCreatureId": "companion",
+    "registryRevision": 6,
+    "route": null,
+    "voiceAvailable": false
+  },
+  "after": {
+    "activeCreatureId": "companion",
+    "activity": null,
+    "choiceForms": {
+      "account": null,
+      "focus": null,
+      "route": null
+    },
+    "context": {
+      "creatureId": "companion",
+      "sceneRevision": 1
+    },
+    "creatures": [
+      {
+        "body": "sprout",
+        "generation": 2,
+        "id": "companion",
+        "kind": "companion",
+        "name": "小伴",
+        "personality": "轻松、好奇的日常伙伴",
+        "senseGenerations": {
+          "hearing": 1,
+          "vision": 1
+        },
+        "senses": {
+          "hearing": true,
+          "vision": true
+        },
+        "tone": "playful"
+      },
+      {
+        "body": "owl",
+        "generation": 2,
+        "id": "work",
+        "kind": "business",
+        "name": "小谨",
+        "personality": "严谨、清楚的业务伙伴",
+        "senseGenerations": {
+          "hearing": 1,
+          "vision": 1
+        },
+        "senses": {
+          "hearing": true,
+          "vision": true
+        },
+        "tone": "precise"
+      }
+    ],
+    "focus": {
+      "activePlan": {
+        "createdAt": 100,
+        "creatureId": "companion",
+        "dueAt": 300100,
+        "input": {
+          "duration": "5",
+          "pace": "gentle",
+          "topic": "study"
+        },
+        "planId": "focus-example",
+        "receipt": {
+          "createdAt": 100,
+          "creatureId": "companion",
+          "dueAt": 300100,
+          "fact": "plan_saved",
+          "input": {
+            "duration": "5",
+            "pace": "gentle",
+            "topic": "study"
+          },
+          "planId": "focus-example",
+          "receiptId": "saved-example",
+          "requestId": "http-plan",
+          "serviceId": "synthetic.focus.v1",
+          "serviceVersion": 1,
+          "source": "deterministic-synthetic-focus"
+        },
+        "requestId": "http-plan",
+        "serviceId": "synthetic.focus.v1",
+        "status": "active"
+      },
+      "grant": {
+        "creatureId": "companion",
+        "enabled": true,
+        "generation": 1,
+        "revision": 1
+      },
+      "planWindow": 1,
+      "plans": [
+        {
+          "createdAt": 100,
+          "creatureId": "companion",
+          "dueAt": 300100,
+          "input": {
+            "duration": "5",
+            "pace": "gentle",
+            "topic": "study"
+          },
+          "planId": "focus-example",
+          "receipt": {
+            "createdAt": 100,
+            "creatureId": "companion",
+            "dueAt": 300100,
+            "fact": "plan_saved",
+            "input": {
+              "duration": "5",
+              "pace": "gentle",
+              "topic": "study"
+            },
+            "planId": "focus-example",
+            "receiptId": "saved-example",
+            "requestId": "http-plan",
+            "serviceId": "synthetic.focus.v1",
+            "serviceVersion": 1,
+            "source": "deterministic-synthetic-focus"
+          },
+          "requestId": "http-plan",
+          "serviceId": "synthetic.focus.v1",
+          "status": "active"
+        }
+      ],
+      "primaryCreatureId": "companion",
+      "registryRevision": 6,
+      "requestCount": 1,
+      "requestLimit": 128,
+      "requestWindow": 4,
+      "requests": [
+        {
+          "planId": "focus-example",
+          "requestId": "http-plan",
+          "status": "completed"
+        }
+      ]
+    },
+    "market": {
+      "catalog": [
+        {
+          "mode": "synthetic-only",
+          "name": "演示地图伙伴",
+          "network": false,
+          "nodes": [
+            "A",
+            "B",
+            "C"
+          ],
+          "paid": false,
+          "productId": "demo.maps.v1",
+          "providerId": "demo-maps",
+          "serviceId": "synthetic.route.v1",
+          "serviceVersion": 1
+        }
+      ],
+      "receiptWindow": 8,
+      "receipts": [],
+      "requestCount": 0,
+      "requestLimit": 128,
+      "requests": [],
+      "subscriptions": []
+    },
+    "mode": "deterministic-synthetic",
+    "presentation": {
+      "activityId": null,
+      "activityRevision": null,
+      "body": "sprout",
+      "context": "personal",
+      "creatureId": "companion",
+      "schema": "creature-scene.v1",
+      "source": "deterministic-policy",
+      "surface": "none",
+      "tone": "playful"
+    },
+    "primaryCreatureId": "companion",
+    "registryRevision": 6,
+    "route": null,
+    "voiceAvailable": false
+  },
+  "status": {
+    "plan": {
+      "createdAt": 100,
+      "creatureId": "companion",
+      "dueAt": 300100,
+      "input": {
+        "duration": "5",
+        "pace": "gentle",
+        "topic": "study"
+      },
+      "planId": "focus-example",
+      "receipt": {
+        "createdAt": 100,
+        "creatureId": "companion",
+        "dueAt": 300100,
+        "fact": "plan_saved",
+        "input": {
+          "duration": "5",
+          "pace": "gentle",
+          "topic": "study"
+        },
+        "planId": "focus-example",
+        "receiptId": "saved-example",
+        "requestId": "http-plan",
+        "serviceId": "synthetic.focus.v1",
+        "serviceVersion": 1,
+        "source": "deterministic-synthetic-focus"
+      },
+      "requestId": "http-plan",
+      "serviceId": "synthetic.focus.v1",
+      "status": "active"
+    },
+    "requestId": "http-plan",
+    "status": "completed"
+  }
+}
