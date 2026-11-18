@@ -1,0 +1,20 @@
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {createServer} from 'node:https';
+import {SceneLab} from '../../../runtime/src/scene.js';
+import {createSceneServer} from '../../../runtime/src/scene-server.js';
+import {createProtectedPreview} from '../../../runtime/src/protected-preview.js';
+import {compileInteractionProgram} from '../../../runtime/src/interaction-program.js';
+// Isolated trusted host fixture, not AI output, login UI, or a deployment.
+const dir=process.argv[2], lab=new SceneLab(join(dir,'core.sqlite'),join(dir,'sink.sqlite'));
+const program=compileInteractionProgram({schema:'temporary-interaction.v1',title:'TLS链测试',fields:[{id:'contents',label:'内容',type:'multiline',maxLength:4000,required:false}],save:{primitive:'local-draft.save'}});
+lab.createInteraction({commandId:'host-tls',sessionId:'tls-draft',context:lab.captureSenseContext(),program,source:{kind:'host-declaration',referenceId:'tls-fixture',modelId:null}});
+const upstream=createSceneServer(lab);
+await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
+let gate;
+const tls=createServer({key:readFileSync(join(dir,'key.pem')),cert:readFileSync(join(dir,'cert.pem'))},(req,res)=>gate(req,res));
+await new Promise(r=>tls.listen(0,'127.0.0.1',r));
+const origin=`https://127.0.0.1:${tls.address().port}`;
+gate=createProtectedPreview({origin,invitation:'synthetic-test-invitation-aaaaaaaaaaaaaaaaaaa',upstream:`http://127.0.0.1:${upstream.address().port}`});
+console.log(JSON.stringify({origin}));
+process.on('SIGTERM',()=>{gate.close();tls.close(()=>upstream.close(()=>{lab.close();process.exit(0);}));});
