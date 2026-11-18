@@ -1,0 +1,1 @@
+{"name":"@cj.studio/summon-runtime","version":"0.1.0","private":true,"type":"module","engines":{"node":">=24.22.1 <25"},"scripts":{"start":"node src/scene-server.js","test":"node --test test/*.test.js"}}
