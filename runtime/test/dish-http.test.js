@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createServer as https,request as httpsRequest} from 'node:https';
+import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';import {join} from 'node:path';import {execFileSync} from 'node:child_process';
+import {SceneLab} from '../src/scene.js';import {createSceneServer} from '../src/scene-server.js';import {createProtectedPreview} from '../src/protected-preview.js';
+const listen=s=>new Promise(r=>s.listen(0,'127.0.0.1',r)),close=s=>new Promise(r=>s.close(r));
+test('protected TLS dish read and commands preserve focus; clients cannot install, create or confirm playback',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'dish-http-'));let lab,upstream,server,gate;
+ try{
+  lab=new SceneLab(join(dir,'core'),join(dir,'sink'));upstream=createSceneServer(lab);await listen(upstream);
+  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(dir,'key'),'-out',join(dir,'cert'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost'],{stdio:'ignore'});
+  const cert=readFileSync(join(dir,'cert'));server=https({key:readFileSync(join(dir,'key')),cert},(req,res)=>gate(req,res));await listen(server);
+  const origin='https://localhost:'+server.address().port,invitation='synthetic-dish-invitation-aaaaaaaaaaaaaaaaaaaaa';gate=createProtectedPreview({origin,invitation,upstream:'http://127.0.0.1:'+upstream.address().port});let auth={};
+  const send=(path,input,extra={})=>new Promise((resolve,reject)=>{const data=Buffer.isBuffer(input)?input:Buffer.from(JSON.stringify(input));const r=httpsRequest({hostname:'127.0.0.1',port:server.address().port,servername:'localhost',ca:cert,path,method:'POST',headers:{Host:new URL(origin).host,Origin:origin,'Content-Type':'application/json',...auth,...extra}},res=>{let body='';res.on('data',c=>body+=c);res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,value:JSON.parse(body)}));});r.on('error',reject);r.end(data);});
+  assert.equal((await send('/scene/dish-read',{sessionId:'meal'})).status,401);
+  const login=await send('/preview/login',{invitation});auth={Cookie:login.headers['set-cookie'][0].split(';')[0],'X-Preview-CSRF':login.value.csrf};
+  assert.equal((await send('/scene/dish-read',{sessionId:'meal'},{'X-Preview-CSRF':''})).status,403);
+  assert.equal((await send('/scene/dish-read',{sessionId:'meal'},{Origin:'https://evil.invalid'})).status,403);
+  assert.equal((await send('/scene/dish-read',{sessionId:'meal',ownerId:'other'})).status,400);
+  for(const path of ['install','create','stopped','confirm-stopped'])assert.equal((await send('/scene/dish-'+path,{})).status,404);
+  lab.installDishCatalog({schema:'synthetic-dish-catalog.v1',catalogId:'demo',items:[{dishId:'soup',name:'合成汤',description:'合成菜品说明',imageRef:'synthetic-soup'}]});
+  lab.createDishSession({sessionId:'meal',taskId:'task-1',catalogId:'demo',context:lab.captureSenseContext()});
+  let view=(await send('/scene/dish-read',{sessionId:'meal'})).value;assert.equal(view.presentation,null);
+  const command=(kind,extra={})=>send('/scene/dish-command',{sessionId:'meal',command:{kind,expectedRevision:view.focus.revision,...extra}});
+  view=(await command('speak',{dishId:'soup'})).value;view=(await command('interrupt',{speechSequence:1})).value;
+  assert.equal((await command('stopped',{speechSequence:1})).value.error,'dish_host_authority_required');
+  assert.equal((await command('image')).value.error,'dish_playback_not_stopped');
+  lab.confirmDishStopped({sessionId:'meal',expectedRevision:3,speechSequence:1});
+  view=(await send('/scene/dish-read',{sessionId:'meal'})).value;
+  view=(await command('details')).value;assert.equal(view.presentation.description,'合成菜品说明');
+  view=(await command('image')).value;assert.equal(view.presentation.imageRef,'synthetic-soup');assert.equal(view.presentation.synthetic,true);
+  const old=view.focus.revision;view=(await command('zoom',{direction:'in'})).value;assert.equal(view.focus.zoomPermille,1250);assert.equal(view.focus.dishId,'soup');assert.equal(view.focus.taskId,'task-1');
+  assert.equal((await send('/scene/dish-command',{sessionId:'meal',command:{kind:'hide',expectedRevision:old}})).status,409);
+  assert.equal((await send('/scene/dish-command',{sessionId:'meal',command:{kind:['image'],expectedRevision:view.focus.revision}})).value.error,'unsupported_dish_focus_command');
+  assert.equal((await send('/scene/dish-read',Buffer.from(' '.repeat(4097)))).status,413);
+  lab.selectCreature({creatureId:'work'});assert.equal((await send('/scene/dish-read',{sessionId:'meal'})).value.error,'dish_context_changed');
+  await send('/preview/logout',{});assert.equal((await send('/scene/dish-read',{sessionId:'meal'})).status,401);
+ }finally{gate?.close();if(server)await close(server);if(upstream)await close(upstream);lab?.close();rmSync(dir,{recursive:true,force:true});}
+});
