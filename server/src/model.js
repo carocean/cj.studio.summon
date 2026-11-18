@@ -16,6 +16,10 @@ export class DomainError extends Error {
 }
 
 export const serviceCatalog = deepFreeze([
+  { id: 'ecm.hello.read', title: 'ECM 只读连接探针', effect: 'external-read-only', renderer: 'text', inputs: [], requiresConfirmation: false },
+  { id: 'sense.hearing', title: '离线语音感知', effect: 'local-media-processing', renderer: 'transcript', inputs: ['audio'], requiresConfirmation: false },
+  { id: 'sense.vision', title: '离线图像文字感知', effect: 'local-media-processing', renderer: 'ocr-text', inputs: ['image'], requiresConfirmation: false },
+  { id: 'device.preview', title: '模拟设备操作预检', effect: 'local-only', renderer: 'receipt-card', inputs: [], requiresConfirmation: false, requiresConnector: 'device-simulation' },
   { id: 'local.report', title: '本地回执', effect: 'local-only', renderer: 'receipt-card', inputs: [], requiresConfirmation: false },
   { id: 'capabilities.describe', title: '说明自身能力', effect: 'read-only', renderer: 'capability-card', inputs: [], requiresConfirmation: false },
   { id: 'conversation', title: '交流', effect: 'model-request', renderer: 'text', inputs: ['message'], requiresConfirmation: false },

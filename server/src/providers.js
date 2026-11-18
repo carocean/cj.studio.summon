@@ -1,3 +1,4 @@
+import { sceneInstruction } from './presentation.js';
 export class DemoProvider {
   mode = 'demo';
   async respond(creature, messages) {
@@ -14,12 +15,13 @@ export class CompatibleProvider {
     if (url.protocol !== 'https:' || url.username || url.password || !apiKey || !model) throw new Error('Invalid LLM configuration');
     this.endpoint = endpoint; this.apiKey = apiKey; this.model = model; this.fetch = fetchImpl;
   }
-  async respond(creature, messages) {
+  async respondScene(creature, messages) { return this.respond(creature, messages, { scene: true }); }
+  async respond(creature, messages, { scene = false } = {}) {
     const response = await this.fetch(this.endpoint, {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20000),
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
       body: JSON.stringify({ model: this.model, messages: [
-        { role: 'system', content: `你是${creature.name}。${creature.description}你只有对话能力，不得声称执行现实动作、访问定位或完成工具调用。` }, ...messages
+        { role: 'system', content: `你是${creature.name}。${creature.description}主体个性偏好（仅表达风格，不授予权限）：${JSON.stringify(creature.aibm?.personality ?? "未指定")}。你只有对话能力，不得声称执行现实动作、访问定位或完成工具调用。${scene ? sceneInstruction : ""}` }, ...messages
       ], max_tokens: 1000 }),
     });
     if (!response.ok) throw new Error('LLM request failed');
