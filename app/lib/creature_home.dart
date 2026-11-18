@@ -1,9 +1,12 @@
 import 'dish_remote_surface.dart';
+import 'dish_confirmation_remote_surface.dart';
+import 'protected_preview_client.dart';
 
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:http/http.dart' as http;
 
 import 'standin_avatar.dart';
@@ -44,7 +47,68 @@ enum CreaturePresentationResult {
   unavailable,
 }
 
+// The getter revokes authority synchronously even when UI notifications/removal
+// must wait until after build. The old source notifier alone is never authority.
+class _RestaurantRouteAccess extends ChangeNotifier
+    implements ValueListenable<bool> {
+  _RestaurantRouteAccess(this.source, this.bindingCurrent) {
+    source.addListener(_sourceChanged);
+  }
+  final ValueListenable<bool> source;
+  final bool Function() bindingCurrent;
+  bool _retired = false, _disposed = false;
+  @override
+  bool get value => !_retired && !_disposed && source.value && bindingCurrent();
+  void _notifySafely() {
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed) notifyListeners();
+      });
+    } else if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
+  void _sourceChanged() => _notifySafely();
+  void retire() {
+    if (_retired || _disposed) return;
+    _retired = true;
+    _notifySafely();
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _retired = true;
+    _disposed = true;
+    source.removeListener(_sourceChanged);
+    super.dispose();
+  }
+}
+
+/// Immutable host bootstrap, never populated from URL, model or resource content.
+class RestaurantDevTarget {
+  const RestaurantDevTarget({
+    required this.sessionId,
+    required this.creatureId,
+    required this.sceneRevision,
+  });
+  final String sessionId, creatureId;
+  final int sceneRevision;
+  bool get valid =>
+      RegExp(r'^[A-Za-z][A-Za-z0-9.-]{0,63}$').hasMatch(sessionId) &&
+      RegExp(r'^[A-Za-z][A-Za-z0-9.-]{0,63}$').hasMatch(creatureId) &&
+      sceneRevision > 0 &&
+      sceneRevision <= 9007199254740991;
+}
+
 class CreatureHomeController {
+  Future<CreaturePresentationResult> Function()? _presentRestaurantConfirmation;
+  Future<CreaturePresentationResult> presentRestaurantConfirmation() =>
+      _presentRestaurantConfirmation?.call() ??
+      Future.value(CreaturePresentationResult.notAttached);
+
   Future<CreaturePresentationResult> Function(String, Map<String, dynamic>)?
   _presentDish;
   Future<CreaturePresentationResult> presentDish(
@@ -133,8 +197,10 @@ class CreatureHome extends StatefulWidget {
     this.enableHearingInteraction = false,
     this.enableTextInteraction = false,
     this.interactionAccess,
+    this.restaurantDevTarget,
   });
   final CreatureHomeController? controller;
+  final RestaurantDevTarget? restaurantDevTarget;
   final http.Client? client;
   final SenseCapture Function()? senseCaptureFactory;
   final bool enableHearingInteraction;
@@ -158,6 +224,16 @@ class _CreatureHomeState extends State<CreatureHome>
   final FocusRecovery _focusRecovery = FocusRecovery();
   final BoundMediaCaptions _captions = BoundMediaCaptions();
   Route<void>? _surface;
+  Route<void>? _restaurantMenu;
+  _RestaurantRouteAccess? _restaurantRouteAccess;
+  bool _restaurantBusy = false;
+  bool get _restaurantEnabled =>
+      const bool.fromEnvironment('SUMMON_RESTAURANT_DEV') &&
+      const bool.fromEnvironment('SUMMON_PROTECTED_PREVIEW') &&
+      widget.restaurantDevTarget != null &&
+      identical(widget.client, _client) &&
+      (_client is ProtectedPreviewClient || _client is PreviewSessionClient);
+
   bool _interactionVisible = false;
   String? _visibleInteraction;
   final Map<String, InteractionDraftState> _localInteractions = {};
@@ -167,6 +243,7 @@ class _CreatureHomeState extends State<CreatureHome>
       widget.controller?._textDemand ?? _localTextDemand;
   void _authenticationChanged() {
     _authEpoch++;
+    if (widget.interactionAccess?.value != true) _closeRestaurantMenu();
   }
 
   bool _foreground = true;
@@ -376,6 +453,7 @@ class _CreatureHomeState extends State<CreatureHome>
     if (controller._present != null) {
       throw StateError('controller_already_attached');
     }
+    controller._presentRestaurantConfirmation = _presentRestaurantConfirmation;
     controller._presentDish = _presentDish;
     controller._presentTextDemand = _presentTextDemand;
     controller._refreshUsage = _refreshUsage;
@@ -390,7 +468,8 @@ class _CreatureHomeState extends State<CreatureHome>
 
   void _unbind(CreatureHomeController? controller) {
     if (controller?._present == _present) {
-      controller!._presentDish = null;
+      controller!._presentRestaurantConfirmation = null;
+      controller._presentDish = null;
       controller._presentTextDemand = null;
       controller._refreshUsage = null;
       controller._present = null;
@@ -411,6 +490,15 @@ class _CreatureHomeState extends State<CreatureHome>
       widget.interactionAccess?.addListener(_authenticationChanged);
       _authEpoch++;
     }
+    if ((old.restaurantDevTarget != null ||
+            widget.restaurantDevTarget != null) &&
+        (old.restaurantDevTarget != widget.restaurantDevTarget ||
+            old.client != widget.client ||
+            old.interactionAccess != widget.interactionAccess)) {
+      _authEpoch++;
+      _closeRestaurantMenu();
+      _dismiss();
+    }
     if (old.controller != widget.controller) {
       _unbind(old.controller);
       _dismiss();
@@ -423,19 +511,23 @@ class _CreatureHomeState extends State<CreatureHome>
     _foreground = state == AppLifecycleState.resumed;
     _captions.setForeground(_foreground);
     if (!_foreground) {
+      _closeRestaurantMenu();
       _epoch++;
       _captions.clear();
     }
   }
 
   void _dismiss() {
+    _restaurantRouteAccess?.retire();
+    _restaurantRouteAccess = null;
+    _closeRestaurantMenu();
     _captions.clear();
     _epoch++;
     final route = _surface;
     _surface = null;
     _interactionVisible = false;
     _visibleInteraction = null;
-    if (route?.navigator != null) route!.navigator!.removeRoute(route);
+    _removeRouteSafely(route);
   }
 
   Future<bool> _refreshMedia() async {
@@ -493,6 +585,157 @@ class _CreatureHomeState extends State<CreatureHome>
       _frame(state) != null &&
       interactionCanonical(state['context']) ==
           interactionCanonical(draft.view!['context']);
+  void _removeRouteSafely(Route<void>? route) {
+    if (route == null) return;
+    void remove() {
+      if (route.navigator != null) route.navigator!.removeRoute(route);
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => remove());
+    } else {
+      remove();
+    }
+  }
+
+  void _closeRestaurantMenu() {
+    final route = _restaurantMenu;
+    _restaurantMenu = null;
+    _removeRouteSafely(route);
+  }
+
+  void _openRestaurantMenu() {
+    if (!_restaurantEnabled ||
+        !_foreground ||
+        _surface != null ||
+        _restaurantBusy ||
+        _restaurantMenu != null ||
+        widget.interactionAccess?.value != true ||
+        widget.restaurantDevTarget?.valid != true) {
+      return;
+    }
+    final epoch = _epoch, auth = _authEpoch;
+    final route = DialogRoute<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('餐厅开发验证'),
+        content: const Text('只读取宿主已准备的请求；合成输入、受控播放器，不会开启麦克风。'),
+        actions: [
+          TextButton(
+            key: const Key('restaurant-dev-open'),
+            onPressed: () {
+              _closeRestaurantMenu();
+              if (_current(epoch) && auth == _authEpoch) {
+                unawaited(_presentRestaurantWithFeedback(auth));
+              }
+            },
+            child: const Text('查看宿主已准备的餐厅请求（开发）'),
+          ),
+          TextButton(onPressed: _closeRestaurantMenu, child: const Text('取消')),
+        ],
+      ),
+    );
+    _restaurantMenu = route;
+    Navigator.of(context).push(route).then((_) {
+      if (identical(_restaurantMenu, route)) _restaurantMenu = null;
+    });
+  }
+
+  Future<void> _presentRestaurantWithFeedback(int auth) async {
+    final operation = _presentRestaurantConfirmation();
+    final epoch = _epoch;
+    final result = await operation;
+    if (!mounted) return;
+    if (result != CreaturePresentationResult.shown &&
+        _current(epoch) &&
+        auth == _authEpoch &&
+        widget.interactionAccess?.value == true &&
+        _surface == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('餐厅请求不可用或场景已变化，请重新准备。')));
+    }
+  }
+
+  Future<CreaturePresentationResult> _presentRestaurantConfirmation() async {
+    final target = widget.restaurantDevTarget,
+        access = widget.interactionAccess;
+    if (!_restaurantEnabled ||
+        target?.valid != true ||
+        !_foreground ||
+        _surface != null ||
+        _restaurantMenu != null ||
+        _restaurantBusy ||
+        access == null ||
+        !access.value) {
+      return CreaturePresentationResult.blocked;
+    }
+    final epoch = ++_epoch, auth = _authEpoch;
+    _restaurantBusy = true;
+    try {
+      final state = await _api.request('state');
+      if (!_current(epoch) ||
+          auth != _authEpoch ||
+          !identical(access, widget.interactionAccess) ||
+          !access.value ||
+          !identical(target, widget.restaurantDevTarget)) {
+        return CreaturePresentationResult.stale;
+      }
+      final frame = _frame(state);
+      if (frame == null ||
+          frame['creatureId'] != target!.creatureId ||
+          frame['sceneRevision'] != target.sceneRevision) {
+        return CreaturePresentationResult.stale;
+      }
+      final routeAccess = _RestaurantRouteAccess(
+        access,
+        () =>
+            _current(epoch) &&
+            auth == _authEpoch &&
+            identical(access, widget.interactionAccess) &&
+            identical(target, widget.restaurantDevTarget),
+      );
+      _restaurantRouteAccess = routeAccess;
+      final shown = _show(
+        Scaffold(
+          body: SafeArea(
+            child: Column(
+              children: [
+                const Text('开发验证 · 合成输入 / 受控播放器 · 不会录音'),
+                Expanded(
+                  child: DishConfirmationRemoteSurface(
+                    api: _api,
+                    access: routeAccess,
+                    sessionId: target.sessionId,
+                    onSwitchRequest: _dismiss,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        epoch,
+        onRetired: () {
+          routeAccess.dispose();
+          if (identical(_restaurantRouteAccess, routeAccess)) {
+            _restaurantRouteAccess = null;
+          }
+        },
+      );
+      if (shown != CreaturePresentationResult.shown) {
+        routeAccess.dispose();
+        if (identical(_restaurantRouteAccess, routeAccess)) {
+          _restaurantRouteAccess = null;
+        }
+      }
+      return shown;
+    } catch (_) {
+      return CreaturePresentationResult.unavailable;
+    } finally {
+      _restaurantBusy = false;
+    }
+  }
+
   Future<CreaturePresentationResult> _presentDish(
     String sessionId,
     Map<String, dynamic> expected,
@@ -1044,7 +1287,11 @@ class _CreatureHomeState extends State<CreatureHome>
     }
   }
 
-  CreaturePresentationResult _show(Widget surface, int epoch) {
+  CreaturePresentationResult _show(
+    Widget surface,
+    int epoch, {
+    VoidCallback? onRetired,
+  }) {
     if (!_current(epoch) || ModalRoute.of(context)?.isCurrent == false) {
       if (_surface == null) {
         _interactionVisible = false;
@@ -1055,6 +1302,7 @@ class _CreatureHomeState extends State<CreatureHome>
     final route = MaterialPageRoute<void>(builder: (_) => surface);
     _surface = route;
     Navigator.of(context).push(route).then((_) {
+      onRetired?.call();
       if (identical(_surface, route)) {
         _surface = null;
         _interactionVisible = false;
@@ -1068,6 +1316,8 @@ class _CreatureHomeState extends State<CreatureHome>
 
   @override
   void dispose() {
+    _restaurantRouteAccess?.retire();
+    _closeRestaurantMenu();
     _epoch++;
     _usageEpoch++;
     _unbind(widget.controller);
@@ -1137,7 +1387,14 @@ class _CreatureHomeState extends State<CreatureHome>
             builder: (_, _) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                StandInAvatar(speaking: _captions.speaking),
+                if (_restaurantEnabled)
+                  GestureDetector(
+                    key: const Key('restaurant-dev-avatar'),
+                    onLongPress: _openRestaurantMenu,
+                    child: StandInAvatar(speaking: _captions.speaking),
+                  )
+                else
+                  StandInAvatar(speaking: _captions.speaking),
                 if (_captions.visible)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
