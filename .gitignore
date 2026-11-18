@@ -5,3 +5,13 @@ node_modules/
 build/
 app/.flutter-plugins*
 data/
+
+__pycache__/
+*.pyc
+.venv/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+.scene-lab/
