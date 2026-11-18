@@ -1,0 +1,8 @@
+{
+  "stage": "policy extraction before third service",
+  "file": "app/lib/choice_form.dart",
+  "fileSha256": "e6882448eed03928b5097176dbc44d7f697e2e363c5b722335b450ff27581357",
+  "ChoiceDraftSha256": "8746c6f9e13192bd147416a35c6221d844667f1ef392b2e05ce3e08209a500a2",
+  "ChoiceFormSha256": "c71f81581a24f1b96718fb150decba98a2f4011a83ffdb4616e48d3e2b116fa8",
+  "scope": "The third service must not alter this general validator, draft state machine or renderer. Only trusted business policy/controller and service definitions may extend it."
+}
