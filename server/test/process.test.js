@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { once } from 'node:events';
@@ -51,4 +51,33 @@ test('running server ticks without client action, then restores state after rest
     assert.equal(restoredSession.turns.length, 2);
     assert.equal(restoredSession.turns[0].content, 'persist this conversation');
   } finally { if (proc) await stop(proc.child); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('server independently detects connector expiry and runs only the prearranged fallback once', {timeout:15000}, async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'summon-loss-process-'));let proc;
+  const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
+  try{
+    proc=await start(join(dir,'state.json'));
+    const post=async(path,body)=>{const response=await fetch(proc.base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.equal(response.ok,true);return response.json();};
+    const s=await post('subjects',{name:'simulated fallback'});
+    await post('mounts',{subjectId:s.id,serviceId:'local.report'});
+    const task=await post('tasks',{subjectId:s.id,serviceId:'local.report',trigger:{kind:'event',type:'connector.lost'}});
+    await post('connectors',{subjectId:s.id,status:'connected',leaseMs:1000});
+    // No manual signal/tick request; normal server interval must generate result.
+    const deadline=Date.now()+5000;
+    let persisted;
+    do {
+      persisted=JSON.parse(readFileSync(join(dir,'state.json'),'utf8'));
+      if(persisted.results.length) break;
+      await new Promise(resolve=>setTimeout(resolve,100));
+    } while(Date.now()<deadline);
+    assert.equal(persisted.results.length,1); // disk polling cannot drive kernel observation
+    let state=await(await fetch(proc.base+'state',{headers})).json();
+    assert.equal(state.results.length,1);assert.equal(state.results[0].taskId,task.id);
+    assert.equal(state.connectors[0].effectiveStatus,'expired');
+    await stop(proc.child);proc=null;proc=await start(join(dir,'state.json'));
+    await new Promise(resolve=>setTimeout(resolve,1100));
+    state=await(await fetch(proc.base+'state',{headers})).json();
+    assert.equal(state.results.length,1);assert.equal(state.tasks[0].status,'completed');
+  }finally{if(proc)await stop(proc.child);rmSync(dir,{recursive:true,force:true});}
 });

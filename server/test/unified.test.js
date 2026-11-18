@@ -80,3 +80,41 @@ test('v0.3 snapshot is normalized without discarding its subjects and tasks', ()
     assert.equal(f.kernel.list('a').revision, 4);
   } finally { f.done(); }
 });
+
+test('revoke/regrant and pause/resume invalidate in-flight model authorization generation', async () => {
+  const f = fixture();
+  try {
+    f.kernel.bootstrap('a'); const c = f.kernel.list('a').subjects[0];
+    for (const action of ['grant', 'lifecycle']) {
+      let finish;
+      const r = new Runtime({respond:()=>new Promise(resolve=>finish=resolve)}, {kernel:f.kernel});
+      const session = r.createSession('a',c.id); const pending = r.call('a',session.id,'before change');
+      if (action === 'grant') { f.kernel.mount('a',c.id,'conversation',false); f.kernel.mount('a',c.id,'conversation',true); }
+      else { f.kernel.transition('a',c.id,'paused'); f.kernel.transition('a',c.id,'active'); }
+      finish('stale result'); await assert.rejects(pending,{code:'authorization_changed'});
+      assert.equal(r.getSession('a',session.id).turns.length,0);
+    }
+    const generation = f.kernel.getSubject('a',c.id).authorizationVersion;
+    f.restart(); assert.equal(f.kernel.getSubject('a',c.id).authorizationVersion,generation);
+    const fresh = new Runtime(new DemoProvider(),{kernel:f.kernel});
+    const s=fresh.createSession('a',c.id); assert.equal((await fresh.call('a',s.id,'fresh')).turns.length,2);
+  } finally {f.done();}
+});
+test('explicit session rotation preserves full history and owner isolation after restart', async () => {
+  const f=fixture();
+  try {
+    f.kernel.bootstrap('a'); const c=f.kernel.list('a').subjects[0];
+    let r=new Runtime(new DemoProvider(),{kernel:f.kernel,maxTurns:1});
+    const full=r.resumeSession('a',c.id); await r.call('a',full.id,'old');
+    await assert.rejects(r.call('a',full.id,'over limit'),{code:'turn_limit'});
+    const next=r.createSession('a',c.id); await r.call('a',next.id,'new');
+    f.restart(); r=new Runtime(new DemoProvider(),{kernel:f.kernel,maxTurns:1});
+    assert.deepEqual(r.listSessions('a',c.id).sessions.map(s=>s.id),[next.id,full.id]);
+    assert.equal(r.getSession('a',full.id).turns[0].content,'old');
+    assert.equal(r.getSession('a',next.id).turns[0].content,'new');
+    assert.throws(()=>r.listSessions('b',c.id),{code:'subject_not_found'});
+    assert.throws(()=>r.getSession('b',full.id),{code:'session_not_found'});
+    const limited=new Runtime(new DemoProvider(),{kernel:f.kernel,maxSessions:2});
+    assert.throws(()=>limited.createSession('a',c.id),{code:'session_capacity'});
+  } finally {f.done();}
+});
