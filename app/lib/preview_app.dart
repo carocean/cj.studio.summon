@@ -7,9 +7,19 @@ import 'protected_preview_client.dart';
 
 /// An explicit, text-only preview entry. No developer routes or endpoint fields.
 class PreviewApp extends StatefulWidget {
-  const PreviewApp({super.key, this.session, this.controller});
+  const PreviewApp({
+    super.key,
+    this.session,
+    this.controller,
+    this.restaurantDevTarget = const RestaurantDevTarget(
+      sessionId: 'meal',
+      creatureId: 'companion',
+      sceneRevision: 1,
+    ),
+  });
   final PreviewSessionClient? session;
   final CreatureHomeController? controller;
+  final RestaurantDevTarget restaurantDevTarget;
   @override
   State<PreviewApp> createState() => _PreviewAppState();
 }
@@ -116,6 +126,11 @@ class _PreviewAppState extends State<PreviewApp> {
             client: _session,
             interactionAccess: _session!.access,
             enableTextInteraction: true,
+            restaurantDevTarget:
+                const bool.fromEnvironment('SUMMON_RESTAURANT_DEV') &&
+                    const bool.fromEnvironment('SUMMON_PROTECTED_PREVIEW')
+                ? widget.restaurantDevTarget
+                : null,
           )
         : const Scaffold(body: Center(child: Text('受保护的文字预览'))),
     // Unknown URL/routes cannot enter the local workbench or configurable API UI.

@@ -1,3 +1,4 @@
+import {DishNarration} from './dish-narration.js';
 import {DishSession} from './dish-session.js';
 import {ReadingViews} from './reading-views.js';
 import {TextInteractionGeneration} from './text-interaction-generation.js';
@@ -34,7 +35,7 @@ function applySignal(v,s) {
 }
 // One synthetic local demo owner. Not authentication for multi-user deployment.
 export class SceneLab {
- #store;#auth;#admin;#worker;#data;#grants;#permits;#clock;#closed=false;#registry;#owner;#market;#focus;#handoff;#interactions;#usage;#textGeneration;#reading;#dish;
+ #store;#auth;#admin;#worker;#data;#grants;#permits;#clock;#closed=false;#registry;#owner;#market;#focus;#handoff;#interactions;#usage;#textGeneration;#reading;#dish;#dishNarrators=new Set();
  constructor(path,sinkPath,{clock=()=>Date.now(),marketOptions={},handoffOptions={},usageOptions={},textGenerationOptions={},readingOptions={}}={}){
   fields(textGenerationOptions,[],['planner','ttlMs','maxAttempts']);
   readingOptions=snapshot('scene-reading-options',readingOptions).value;fields(readingOptions,[],['installedFontIds','maxResources','maxViewsPerOwner','maxCommandsPerOwner','maxAccessRecords']);
@@ -49,7 +50,7 @@ export class SceneLab {
   this.#admin=this.#auth.authenticate('host-admin');this.#worker=this.#auth.authenticate('demo-work');
   this.#grants=new GrantLedger(this.#store,this.#auth,{clock});this.#data=new ControlledContextLab(this.#store,this.#grants);
   this.#permits=new PermitLab(this.#store,this.#auth,sinkPath,{clock,contextLab:this.#data});
-  this.#store.transaction(tx=>{if(!tx.get('scene-state'))tx.put('scene-state','scene-state',{activeCreatureId:'companion',nextTask:1,activity:null},0);return null;});
+  this.#store.transaction(tx=>{if(!tx.get('scene-state'))this.#putScene(tx,{activeCreatureId:'companion',nextTask:1,activity:null},0);return null;});
   this.#interactions=new InteractionSession(this.#store,this.#auth,{clock,currentContext:handle=>{
    if(this.#auth.resolve(handle)!=='demo-owner')deny('unauthenticated');
    return this.captureSenseContext();
@@ -64,9 +65,10 @@ export class SceneLab {
   this.#dish=new DishSession(this.#store,this.#auth,{administratorHandle:this.#admin,currentContext:handle=>{if(this.#auth.resolve(handle)!=='demo-owner')deny('unauthenticated');return this.captureSenseContext();}});
   this.#handoff.invalidatePending(this.#owner);
  }
- close(){if(this.#closed)return;this.#dish.close(this.#admin);this.#reading.retireHost(this.#admin);this.#textGeneration.close();this.#permits.close();this.#store.close();this.#closed=true;}
+ close(){if(this.#closed)return;if(this.#dishNarrators.size)deny('dish_narration_retire_required');this.#dish.close(this.#admin);this.#reading.retireHost(this.#admin);this.#textGeneration.close();this.#permits.close();this.#store.close();this.#closed=true;}
  #open(){if(this.#closed)deny('scene_lab_closed');}
- #change(apply){this.#open();this.#store.transaction(tx=>{const r=tx.get('scene-state');const value=apply(withoutTextEntry(r.value));if(r.value.activity&&value.activity?.id!==r.value.activity.id)tx.put('scene-history.'+r.value.activity.id,'scene-history',r.value.activity,0);tx.put('scene-state','scene-state',value,r.revision);return null;});this.#handoff?.invalidatePending(this.#owner);return this.state();}
+ #putScene(tx,value,expectedRevision){if(this.#dishNarrators.size)deny('dish_narration_retire_required');return tx.put('scene-state','scene-state',value,expectedRevision);}
+ #change(apply){this.#open();if(this.#dishNarrators.size)deny('dish_narration_retire_required');this.#store.transaction(tx=>{const r=tx.get('scene-state');const value=apply(withoutTextEntry(r.value));if(r.value.activity&&value.activity?.id!==r.value.activity.id)tx.put('scene-history.'+r.value.activity.id,'scene-history',r.value.activity,0);this.#putScene(tx,value,r.revision);return null;});this.#handoff?.invalidatePending(this.#owner);return this.state();}
  state(){
   this.#open();const scene=this.#store.get('scene-state'),value=scene.value;
   const a=value.activity,registry=this.#registry.state(this.#owner),marketFull=this.#market.state(this.#owner),focus=this.#focus.state(this.#owner);
@@ -76,6 +78,19 @@ export class SceneLab {
   const choiceForms=buildChoiceForms({context:{creatureId:value.activeCreatureId,sceneRevision:scene.revision},activity:a,market,focus});
   return snapshot('scene-view',{...(value.textEntryVisible?{textEntry:{schema:'scene-text-entry.v1',context:{creatureId:value.activeCreatureId,sceneRevision:scene.revision},maxLength:200,source:'deterministic-policy'}}:{}),mode:'deterministic-synthetic',presentation:presentCreature(value,registry.creatures),creatures:registry.creatures,primaryCreatureId:registry.primaryCreatureId,registryRevision:registry.revision,context:this.captureSenseContext(),market,focus,choiceForms,route:value.routeView??null,activeCreatureId:value.activeCreatureId,activity:a?{id:a.id,status:a.status,sceneVisible:a.sceneVisible,revision:a.revision,
    form:{schema:'synthetic-account.v1',fields:definitions.map(d=>({...d,type:'choice',value:a.values[d.id]??null}))},receipt:a.receipt}:null}).value;
+ }
+ // Explicit host-only lifecycle: stop/retire adapters before scene change or close.
+ createDishNarration(options){
+  this.#open();fields(options,['synthesizer','player'],['timeoutMs']);
+  const narrator=new DishNarration(this.#dish,this.#auth,{...options,administratorHandle:this.#admin});
+  this.#dishNarrators.add(narrator);
+  return Object.freeze({
+   start:raw=>{this.#open();return narrator.start(this.#owner,raw);},
+   pauseForInput:raw=>{this.#open();return narrator.pauseForInput(this.#owner,raw);},
+   requestExplanation:raw=>{this.#open();return narrator.requestExplanation(this.#owner,raw);},
+   cancel:()=>narrator.cancel(this.#admin),
+   close:async()=>{await narrator.close(this.#admin);this.#dishNarrators.delete(narrator);},
+  });
  }
  // Dish creation, catalog setup and playback acknowledgements remain host-only.
  installDishCatalog(raw){this.#open();return this.#dish.installCatalog(this.#admin,raw);}
@@ -138,7 +153,7 @@ export class SceneLab {
   const result=this.#usage.perform(this.#owner,commandId,{operation:'creature-select',...spec},{apply:tx=>{
    this.creature(r.creatureId);this.assertSenseContext(r.context);
    const current=tx.get('scene-state'),changed=current.value.activeCreatureId!==r.creatureId;
-   const saved=changed?tx.put('scene-state','scene-state',{...withoutTextEntry(current.value),activeCreatureId:r.creatureId},current.revision):current;
+   const saved=changed?this.#putScene(tx,{...withoutTextEntry(current.value),activeCreatureId:r.creatureId},current.revision):current;
    return {target:{kind:'creature',targetId:r.creatureId},qualifies:changed,ack:{fact:'creature_selection_confirmed',creatureId:r.creatureId,changed,context:{creatureId:r.creatureId,sceneRevision:saved.revision}}};
   }});
   if(!result.replayed&&result.ack.changed)this.#handoff.invalidatePending(this.#owner);
@@ -349,7 +364,7 @@ export class SceneLab {
     this.assertSenseContext(proposal.context);this.#spokenSubscription(proposal);
     if(this.senseNow()>=proposal.expiresAt)deny('sensory_event_expired');
     if(response.receipt.instanceId!==proposal.instanceId||response.receipt.requestId!==proposal.requestId)deny('spoken_route_receipt_mismatch');
-    tx.put('scene-state','scene-state',{...withoutTextEntry(scene.value),activeCreatureId:proposal.instanceId,routeView:{...response,visible:true}},scene.revision);
+    this.#putScene(tx,{...withoutTextEntry(scene.value),activeCreatureId:proposal.instanceId,routeView:{...response,visible:true}},scene.revision);
     tx.put('sense-event.'+eventId,'sense-event',{...r.value,status:'route_applied',receiptId:response.receipt.receiptId},r.revision);return null;
    });
   }catch(error){
@@ -392,7 +407,7 @@ export class SceneLab {
    if(frame.creatureId!==event.frame.creatureId||frame.sceneRevision!==event.frame.sceneRevision||current.revision!==frame.sceneRevision||current.value.activeCreatureId!==frame.creatureId)deny('sensory_context_changed');
    if(expectedCandidate==='creature-request')this.assertCreatureProposalCurrent(creatureProposal);
    const value=expectedCandidate==='creature-request'?{...withoutTextEntry(current.value),activeCreatureId:creatureProposal.targetCreatureId}:applySignal(current.value,{modality:'hearing',signal:expectedCandidate,origin:'confirmed-local-perception',sourceEventId:eventId});
-   tx.put('scene-state','scene-state',value,current.revision);
+   this.#putScene(tx,value,current.revision);
    tx.put('sense-event.'+eventId,'sense-event',{...event,status:'applied'},r.revision);return {replayed:false};
   });this.#handoff.invalidatePending(this.#owner);return {...result,state:this.state()};
  }

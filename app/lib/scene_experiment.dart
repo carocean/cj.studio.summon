@@ -37,6 +37,9 @@ class SceneExperimentApi {
       return textGenerationRequest(client, action, body);
     }
     if (![
+      'dish-confirmation-read',
+      'dish-confirmation-respond',
+      'dish-confirmation-invalidate',
       'dish-read',
       'dish-command',
       'state',

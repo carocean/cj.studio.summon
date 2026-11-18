@@ -74,6 +74,9 @@ final class ProtectedPreviewClient extends http.BaseClient {
     'textgen-state',
   };
   static const _post = {
+    'dish-confirmation-read',
+    'dish-confirmation-respond',
+    'dish-confirmation-invalidate',
     'dish-read',
     'dish-command',
     'textgen-generate',

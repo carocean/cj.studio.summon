@@ -47,12 +47,13 @@ export class LocalSenseProcessor {
 }
 export class PerceptionService {
   constructor(kernel, { runtime = null, processor = new LocalSenseProcessor(), scratch = join(dirname(kernel.path), 'sense-tmp') } = {}) {
-    this.runtime = runtime; this.kernel = kernel; this.processor = processor; this.scratch = scratch; this.active = new Set(); this.dirs = new Set(); this.closed = false;
+    this.runtime = runtime; this.kernel = kernel; this.processor = processor; this.scratch = scratch; this.active = new Set(); this.dirs = new Set(); this.closed = false; this.cancelGeneration = 0;
     mkdirSync(scratch, { recursive: true, mode: 0o700 });
     // Kernel owns the store lock. Recover only our dedicated job directories.
     for (const name of readdirSync(scratch)) if (name.startsWith('job-')) rmSync(join(scratch, name), { recursive: true, force: true });
   }
-  close() { this.closed = true; this.processor.cancel?.(); for (const dir of this.dirs) rmSync(dir, { recursive: true, force: true }); }
+  cancelPending() { this.cancelGeneration++; this.processor.cancel?.(); }
+  close() { this.closed = true; this.cancelPending(); for (const dir of this.dirs) rmSync(dir, { recursive: true, force: true }); }
   async capabilities() {
     if (this.capabilitiesCache && Date.now() < this.capabilitiesUntil) return structuredClone(this.capabilitiesCache);
     this.capabilitiesPromise ??= this.processor.capabilities();
@@ -85,9 +86,12 @@ export class PerceptionService {
     if (this.active.has(ownerId) || this.active.size >= 2) throw new DomainError(429, 'perception_busy');
     // Subject authorization is checked before spawning any processor.
     const perception = this.kernel.beginPerception(ownerId, { creatureId, modality, mimeType: media.mimeType, byteLength: bytes.length });
+    const cancellation = this.cancelGeneration;
+    const checkCancellation = () => { if (cancellation !== this.cancelGeneration) throw new DomainError(409, 'perception_cancelled'); };
     this.active.add(ownerId); let dir;
     try {
       const caps = await this.capabilities();
+      checkCancellation();
       if (!caps[modality]?.available) throw new DomainError(503, 'perception_engine_unavailable');
       const language = body.language || (modality === 'hearing' ? caps.hearing.language : caps.vision.languages?.includes('chi_sim') ? 'zh' : 'en') || 'en';
       if (this.closed) throw new DomainError(503, 'perception_unavailable');
@@ -96,6 +100,7 @@ export class PerceptionService {
       const path = join(dir, 'input.media'); writeFileSync(path, bytes, { mode: 0o600 });
       const result = await this.processor.process({ modality, path, root: dir, mimeType: media.mimeType, language });
       if (this.closed) throw new DomainError(503, 'perception_unavailable');
+      checkCancellation();
       if (typeof result.text !== 'string' || result.text.length > 16000 || result.realProcessing !== true || typeof result.engine !== 'string' || typeof result.model !== 'string') throw new DomainError(502, 'invalid_perception_output');
       const allowsTextInput = modality === 'hearing' && requestsText(result.text);
       const record = this.kernel.finishPerception(ownerId, perception.id, {
@@ -117,6 +122,7 @@ export class PerceptionService {
           const session = this.runtime.resumeSession(ownerId, creatureId);
           const response = await this.runtime.call(ownerId, session.id, result.text, { scene: true, commitGuard: () => {
             if (this.closed) throw new DomainError(503, 'perception_unavailable');
+            checkCancellation();
             this.kernel.assertCompletedPerceptionAuthority(ownerId, record.id);
           } });
           dialogue = { status: 'completed', providerMode: response.providerMode, sessionId: session.id,

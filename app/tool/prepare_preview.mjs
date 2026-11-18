@@ -14,7 +14,7 @@ export function parseBuildConfig(text){
  if(lines.length!==1||!lines[0].endsWith(';'))fail('build_config_assignment');
  let c;try{c=JSON.parse(lines[0].slice('_flutter.buildConfig = '.length,-1));}catch{fail('build_config_json');}
  if(!exact(c,['engineRevision','useLocalCanvasKit','wasmHashes','builds'])||! /^[0-9a-f]{40}$/.test(c.engineRevision)||c.useLocalCanvasKit!==true)fail('build_config_not_local');
- if(!Array.isArray(c.builds)||c.builds.length!==2||!exact(c.builds[0],['compileTarget','renderer','mainJsPath'])||c.builds[0].compileTarget!=='dart2js'||c.builds[0].renderer!=='canvaskit'||c.builds[0].mainJsPath!=='main.dart.js'||!exact(c.builds[1],[]))fail('build_config_target');
+ if(!Array.isArray(c.builds)||![1,2].includes(c.builds.length)||!exact(c.builds[0],['compileTarget','renderer','mainJsPath'])||c.builds[0].compileTarget!=='dart2js'||c.builds[0].renderer!=='canvaskit'||c.builds[0].mainJsPath!=='main.dart.js'||(c.builds.length===2&&!exact(c.builds[1],[])))fail('build_config_target');
  const allowed=new Set(['canvaskit.wasm','chromium/canvaskit.wasm','webparagraph/canvaskit.wasm','skwasm.wasm','skwasm_heavy.wasm','wimp.wasm']);
  if(!c.wasmHashes||typeof c.wasmHashes!=='object'||Array.isArray(c.wasmHashes)||!Object.hasOwn(c.wasmHashes,'canvaskit.wasm')||Object.entries(c.wasmHashes).some(([k,v])=>!allowed.has(k)||typeof v!=='string'||!/^[0-9a-f]{64}$/.test(v)))fail('build_config_hashes');
  return {engineRevision:c.engineRevision,useLocalCanvasKit:true,wasmHashes:{'canvaskit.wasm':c.wasmHashes['canvaskit.wasm']},builds:c.builds};

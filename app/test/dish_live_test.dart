@@ -90,6 +90,17 @@ void main() {
           );
           ready = jsonDecode(lines!.current) as Map<String, dynamic>;
           expect(ready['synthetic'], true);
+          if (Platform.environment['DISH_REAL_ASR'] == '1') {
+            final evidence = ready['hearingEvidence'] as Map<String, dynamic>;
+            expect(
+              evidence['source'],
+              'synthetic-user-speech-real-offline-asr',
+            );
+            expect(evidence['understanding'], 'finite-whole-utterance-rules');
+            expect(evidence['llmUsed'], false);
+            expect(evidence['transcript'], isNotEmpty);
+          }
+
           final origin = ready['origin'] as String;
           // Trust only this temporary local certificate, not arbitrary bad TLS.
           final trust = SecurityContext(withTrustedRoots: false)

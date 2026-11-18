@@ -12,7 +12,7 @@ export {hearingSceneCandidate} from './scene-intent.js';
 // Trusted in-process adapter. Never accepts a client-posted "trusted receipt".
 // Legacy sensor authorization remains authoritative; core scene state is separate.
 export class PerceptionSceneBridge {
- #scene;#kernel;#service;#owner;#subjects;#ttl;#active=false;#responder;#replyTimeout;#replyAbort=null;#closed=false;#voice;#voiceAbort=null;#voiceBusy=false;#replies=new Map();#resolver;#planner;#hearing=null;#hearingTimer=null;#plannerBusy=false;
+ #scene;#kernel;#service;#owner;#subjects;#ttl;#active=false;#responder;#replyTimeout;#replyAbort=null;#closed=false;#voice;#voiceAbort=null;#voiceBusy=false;#replies=new Map();#resolver;#planner;#hearing=null;#hearingTimer=null;#plannerBusy=false;#dishObservation=null;#dishTimer=null;#inputGeneration=0;
  constructor(scene,{kernel,service,ownerId,subjects,ttlMs=30000,exclusiveOwner=false,responder=new LocalCreatureResponder(),replyTimeoutMs=5000,voice=null,resolveSubject=null,interactionPlanner=null}){
   if(!Number.isSafeInteger(replyTimeoutMs)||replyTimeoutMs<1||replyTimeoutMs>30000)deny('invalid_response_timeout');
   if(exclusiveOwner!==true)deny('exclusive_sensory_owner_required');
@@ -26,7 +26,7 @@ export class PerceptionSceneBridge {
   this.#planner=interactionPlanner;
   this.#scene=scene;this.#kernel=kernel;this.#service=service;this.#owner=ownerId;this.#subjects=mapping;this.#ttl=ttlMs;this.#responder=responder;this.#replyTimeout=replyTimeoutMs;this.#voice=voice;this.#resolver=resolveSubject;
  }
- close(){this.#closed=true;this.#dropHearing();this.#replyAbort?.abort();this.#voiceAbort?.abort();this.#replies.clear();}
+ close(){this.#inputGeneration++;this.#closed=true;this.#dropHearing();this.#replyAbort?.abort();this.#voiceAbort?.abort();this.#replies.clear();}
  #recycle(){
   this.#scene.recycleSense();
   // This bridge owns a dedicated legacy owner namespace. Core retirement commits
@@ -64,10 +64,12 @@ export class PerceptionSceneBridge {
   if(raw.language!==undefined&&!['zh','en'].includes(raw.language))deny('invalid_perception_language');
   this.#recycle();
   const before=new Set(this.#kernel.listPerceptions(this.#owner).map(p=>p.id));
+  const inputGeneration=this.#inputGeneration;
   const eventId='p-'+randomUUID(),expiresAt=this.#scene.senseNow()+this.#ttl;
   this.#scene.beginSense(eventId,frame,raw.modality,expiresAt);this.#active=true;
   try{
    const result=await this.#service.ingest(this.#owner,{creatureId:legacySubject,modality:raw.modality,media:raw.media,...(raw.language?{language:raw.language}:{}),responseMode:'perception'});
+   if(inputGeneration!==this.#inputGeneration)deny('sensory_input_cancelled');
    // No await between final authority/context check and core event commit.
    this.#kernel.assertCompletedPerceptionAuthority(this.#owner,result.id);
    if(result.creatureId!==legacySubject||result.modality!==raw.modality||result.status!=='completed')deny('sensory_receipt_mismatch');
@@ -83,6 +85,7 @@ export class PerceptionSceneBridge {
    // Response preparation is asynchronous. Recheck authorization and scene again
    // before exposing even a reply; a model/adapter is never an authority issuer.
    this.#kernel.assertCompletedPerceptionAuthority(this.#owner,result.id);
+   if(inputGeneration!==this.#inputGeneration)deny('sensory_input_cancelled');
    this.#scene.assertSenseContext(frame);
    this.#authority(frame,raw.modality,creatureGeneration);
    const event=this.#scene.finishSense(eventId,{...(creatureProposal?{creatureProposal}:{}),routeProposal,creatureGeneration,perceptionId:result.id,legacySubject,engine:result.result.engine.slice(0,200),model:result.result.model.slice(0,200),realProcessing:result.result.realProcessing,textLength:result.result.text.length,candidate});
@@ -95,13 +98,37 @@ export class PerceptionSceneBridge {
     this.#hearing={eventId,text:result.result.text,state:'ready',abort:null};
     this.#hearingTimer=setTimeout(()=>this.#dropHearing(),Math.max(0,expiresAt-this.#scene.senseNow()));this.#hearingTimer.unref?.();
    }
+   if(event.modality==='hearing'&&event.status==='observation'&&result.result.realProcessing===true&&result.result.text.trim()&&Buffer.byteLength(result.result.text)<=16384){
+    this.#dishObservation={eventId,text:result.result.text};
+    this.#dishTimer=setTimeout(()=>{this.#dishObservation=null;},Math.max(0,expiresAt-this.#scene.senseNow()));this.#dishTimer.unref?.();
+   }
    return {event,result:result.result,companionReply,voiceAvailable:!!this.#voice,policy:'observation-or-explicitly-confirmed-scene-proposal',llmUsed:false};
   }catch(error){const failed=this.#kernel.listPerceptions(this.#owner).find(p=>!before.has(p.id)&&p.creatureId===legacySubject);this.#scene.failSense(eventId,failed?{perceptionId:failed.id,legacySubject,candidate:null}:null);throw error;}finally{this.#active=false;this.#replyAbort=null;}
  }
  #dropHearing(){
+  clearTimeout(this.#dishTimer);this.#dishTimer=null;this.#dishObservation=null;
   clearTimeout(this.#hearingTimer);this.#hearingTimer=null;
   if(this.#hearing){this.#hearing.text=null;this.#hearing.abort?.abort();this.#hearing=null;}
  }
+ // Trusted host-only: consume our own latest completed observation, never a
+ // caller-posted transcript or receipt. No HTTP route exposes this operation.
+ assertDishObservationAuthority(raw){
+  const r=snapshot('dish-hearing-authority',raw).value;fields(r,['eventId','context']);
+  if(this.#closed)deny('sensory_bridge_closed');const event=this.#scene.senseEvent(r.eventId);
+  if(event.status!=='observation'||event.modality!=='hearing'||event.metadata?.realProcessing!==true)deny('dish_hearing_source_unavailable');
+  if(snapshot('frame',r.context).bytes!==snapshot('frame',event.frame).bytes)deny('sensory_context_changed');
+  this.#scene.assertSenseContext(r.context);this.#routeSource(r.eventId);return true;
+ }
+ consumeDishObservation(raw){
+  const r=snapshot('dish-hearing-observation',raw).value;fields(r,['eventId','context']);
+  if(this.#closed)deny('sensory_bridge_closed');
+  const cached=this.#dishObservation,event=this.#scene.senseEvent(r.eventId);
+  if(!cached||cached.eventId!==r.eventId||event.status!=='observation'||event.modality!=='hearing'||event.metadata?.realProcessing!==true)deny('dish_hearing_source_unavailable');
+  if(snapshot('frame',r.context).bytes!==snapshot('frame',event.frame).bytes)deny('sensory_context_changed');
+  this.#scene.assertSenseContext(r.context);this.#routeSource(r.eventId);
+  const text=cached.text;this.#dropHearing();return {eventId:r.eventId,text,recognition:'real-processing-reported',understanding:'none'};
+ }
+ cancelDishInput(){this.#inputGeneration++;this.#dropHearing();this.#replyAbort?.abort();this.#service.cancelPending?.();}
  async generateInteraction(raw,{signal}={}){
   if(this.#closed)deny('sensory_bridge_closed');
   const r=snapshot('hearing-interaction-request',raw).value;fields(r,['eventId','context']);fields(r.context,['creatureId','sceneRevision']);
