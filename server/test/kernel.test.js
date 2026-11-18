@@ -123,3 +123,16 @@ test('resume survives restart, reuses capacity, isolates owners and rechecks lif
     assert.throws(() => f.k.resumeSession('a', a.id), {code:'subject_not_active'});
   } finally { f.done(); }
 });
+
+test('relative timer is based on server time; idempotent retry never postpones its deadline',()=>{
+  const f=setup();try{
+    const s=f.k.createSubject('a',{name:'relative'});f.k.mount('a',s.id,'local.report');
+    const request={subjectId:s.id,serviceId:'local.report',requestId:'relative-timer',trigger:{kind:'timer',delayMs:5000}};
+    const task=f.k.schedule('a',request);assert.equal(task.dueAt,6000);assert.equal(task.trigger.at,6000);
+    f.setTime(4000);f.restart();const repeated=f.k.schedule('a',request);assert.equal(repeated.dueAt,6000);assert.equal(repeated.replayed,true);
+    f.setTime(5999);assert.equal(f.k.tick().length,0);f.setTime(6000);assert.equal(f.k.tick().length,1);
+    assert.equal(f.k.schedule('a',request).id,task.id);assert.equal(f.k.list('a').tasks.length,1);
+    assert.throws(()=>f.k.schedule('a',{...request,requestId:'different-key',trigger:{kind:'timer',at:0,delayMs:1000}}),{code:'ambiguous_timer'});
+    for(const delayMs of [0,999,86400001,'1000',1.1]) assert.throws(()=>f.k.schedule('a',{...request,trigger:{kind:'timer',delayMs}}),{code:'invalid_timer'});
+  }finally{f.done();}
+});

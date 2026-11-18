@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 class ApiFailure implements Exception {
@@ -8,11 +9,17 @@ class ApiFailure implements Exception {
 }
 
 class SummonApi {
-  SummonApi(
-      {required String endpoint, required this.token, required this.client})
-      : endpoint = Uri.parse(endpoint.trim().replaceFirst(RegExp(r'/+$'), '')) {
-    final local = ['localhost', '127.0.0.1', '10.0.2.2', '::1']
-        .contains(this.endpoint.host);
+  SummonApi({
+    required String endpoint,
+    required this.token,
+    required this.client,
+  }) : endpoint = Uri.parse(endpoint.trim().replaceFirst(RegExp(r'/+$'), '')) {
+    final local = [
+      'localhost',
+      '127.0.0.1',
+      '10.0.2.2',
+      '::1',
+    ].contains(this.endpoint.host);
     if ((this.endpoint.scheme != 'https' &&
             !(this.endpoint.scheme == 'http' && local)) ||
         this.endpoint.userInfo.isNotEmpty ||
@@ -28,18 +35,21 @@ class SummonApi {
   final String token;
   final http.Client client;
 
-  Future<Map<String, dynamic>> request(String path,
-      {Map<String, dynamic>? body}) async {
+  Future<Map<String, dynamic>> request(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
     if (!path.startsWith('/v1/')) throw const ApiFailure(0, 'invalid_path');
     final uri = endpoint.replace(path: path);
     final headers = {
       'Authorization': 'Bearer $token',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     };
-    final response = await (body == null
-            ? client.get(uri, headers: headers)
-            : client.post(uri, headers: headers, body: jsonEncode(body)))
-        .timeout(const Duration(seconds: 25));
+    final response =
+        await (body == null
+                ? client.get(uri, headers: headers)
+                : client.post(uri, headers: headers, body: jsonEncode(body)))
+            .timeout(Duration(seconds: path == '/v1/perceptions' ? 95 : 25));
     if (response.statusCode >= 400) {
       String code = 'request_failed';
       try {

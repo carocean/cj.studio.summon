@@ -1,0 +1,14 @@
+{
+  "source": "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+  "sourceSha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+  "artifactSha256": "e67a2b986195ba174259130d5d69a09e25cabfe5668fd3e4b6ec031d0a6ae322",
+  "bytes": 16437340,
+  "limitBytes": 16777216,
+  "family": "Noto Sans CJK SC",
+  "style": "Regular",
+  "unicodeCodepoints": 44810,
+  "glyphs": 65535,
+  "tablesIdenticalExceptHeadChecksum": true,
+  "fullFace": true,
+  "subset": false
+}

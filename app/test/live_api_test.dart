@@ -55,9 +55,139 @@ void main() {
         );
         expect(result['turns'][0]['content'], 'Flutter 客户端真实联调');
         expect(result['turns'][1]['content'], contains('演示模式'));
+        final createdSubject = await api.request(
+          '/v1/kernel/subjects',
+          body: {
+            'requestId': 'dart-create-persistent',
+            'name': 'Flutter 创建的持久主体',
+            'personality': '简洁',
+            'activitySpace': 'fixed-simulation',
+          },
+        );
+        expect(createdSubject['aibm']['serviceAbilities'], isEmpty);
+        await api.request(
+          '/v1/kernel/mounts',
+          body: {
+            'subjectId': createdSubject['id'],
+            'serviceId': 'local.report',
+            'enabled': true,
+          },
+        );
+        final taskRequest = {
+          'subjectId': createdSubject['id'],
+          'serviceId': 'local.report',
+          'requestId': 'dart-delayed-task',
+          'trigger': {'kind': 'timer', 'delayMs': 60000},
+          'payload': {'purpose': 'local task only'},
+        };
+        final delayedTask = await api.request(
+          '/v1/kernel/tasks',
+          body: taskRequest,
+        );
+        await api.request(
+          '/v1/kernel/transitions',
+          body: {'subjectId': createdSubject['id'], 'status': 'paused'},
+        );
         server!.kill(ProcessSignal.sigterm);
         await server!.exitCode.timeout(const Duration(seconds: 5));
         api = await startServer();
+        final replayedCreate = await api.request(
+          '/v1/kernel/subjects',
+          body: {
+            'requestId': 'dart-create-persistent',
+            'name': 'Flutter 创建的持久主体',
+            'personality': '简洁',
+            'activitySpace': 'fixed-simulation',
+          },
+        );
+        expect(replayedCreate['id'], createdSubject['id']);
+        expect(replayedCreate['replayed'], true);
+        final taskReplay = await api.request(
+          '/v1/kernel/tasks',
+          body: taskRequest,
+        );
+        expect(taskReplay['id'], delayedTask['id']);
+        expect(taskReplay['dueAt'], delayedTask['dueAt']);
+        await api.request(
+          '/v1/kernel/cancellations',
+          body: {'taskId': delayedTask['id']},
+        );
+        final managementState = await api.request('/v1/kernel/state');
+        final persistedSubject = (managementState['subjects'] as List)
+            .firstWhere((s) => s['id'] == createdSubject['id']);
+        expect(persistedSubject['status'], 'paused');
+        expect(persistedSubject['aibm']['serviceAbilities'], ['local.report']);
+        await api.request(
+          '/v1/kernel/transitions',
+          body: {'subjectId': createdSubject['id'], 'status': 'active'},
+        );
+        final localReceipt = await api.request(
+          '/v1/invocations',
+          body: {
+            'creatureId': createdSubject['id'],
+            'serviceId': 'local.report',
+            'context': {
+              'zone': 'demo-world',
+              'renderers': ['receipt-card'],
+            },
+          },
+        );
+        expect(localReceipt['status'], 'completed');
+        expect(localReceipt['effect'], 'local-only');
+        await api.request(
+          '/v1/kernel/mounts',
+          body: {
+            'subjectId': createdSubject['id'],
+            'serviceId': 'device.preview',
+            'enabled': true,
+          },
+        );
+        final deviceRequest = {
+          'creatureId': createdSubject['id'],
+          'serviceId': 'device.preview',
+          'context': {
+            'zone': 'demo-world',
+            'renderers': ['receipt-card'],
+          },
+        };
+        await expectLater(
+          api.request('/v1/invocations', body: deviceRequest),
+          throwsA(
+            isA<ApiFailure>().having(
+              (e) => e.code,
+              'code',
+              'connector_unavailable',
+            ),
+          ),
+        );
+        await api.request(
+          '/v1/kernel/connectors',
+          body: {
+            'subjectId': createdSubject['id'],
+            'status': 'connected',
+            'leaseMs': 30000,
+          },
+        );
+        final preview = await api.request(
+          '/v1/invocations',
+          body: deviceRequest,
+        );
+        expect(preview['data']['deviceActionExecuted'], false);
+        expect(preview['data']['simulation'], true);
+        await api.request(
+          '/v1/kernel/connectors',
+          body: {'subjectId': createdSubject['id'], 'status': 'disconnected'},
+        );
+        await expectLater(
+          api.request('/v1/invocations', body: deviceRequest),
+          throwsA(
+            isA<ApiFailure>().having(
+              (e) => e.code,
+              'code',
+              'connector_unavailable',
+            ),
+          ),
+        );
         final restored = await api.request(
           '/v1/sessions/resume',
           body: {'creatureId': creature['id']},
@@ -69,6 +199,19 @@ void main() {
           body: {'creatureId': creature['id']},
         );
         expect(repeated['id'], session['id']);
+        final nextSession = await api.request(
+          '/v1/sessions',
+          body: {'creatureId': creature['id']},
+        );
+        final histories = await api.request(
+          '/v1/creatures/${creature['id']}/sessions',
+        );
+        expect((histories['sessions'] as List).map((s) => s['id']).toList(), [
+          nextSession['id'],
+          session['id'],
+        ]);
+        final oldHistory = await api.request('/v1/sessions/${session['id']}');
+        expect(oldHistory['turns'], result['turns']);
         final discovery = await api.request(
           '/v1/discovery',
           body: {

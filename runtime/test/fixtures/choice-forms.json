@@ -1,0 +1,184 @@
+{
+  "fixture": "synthetic-choice-forms.v1",
+  "input": {
+    "context": {
+      "creatureId": "work",
+      "sceneRevision": 7
+    },
+    "activity": {
+      "id": "task-example",
+      "revision": 2,
+      "status": "draft",
+      "sceneVisible": true,
+      "values": {
+        "customerAlias": "demo-a",
+        "accountType": "daily",
+        "contactPreference": "none"
+      }
+    },
+    "market": {
+      "subscriptions": [
+        {
+          "productId": "demo.maps.v1",
+          "instanceId": "maps-example",
+          "revision": 3,
+          "generation": 2,
+          "status": "active",
+          "routeGranted": true
+        }
+      ],
+      "catalog": [
+        {
+          "productId": "demo.maps.v1",
+          "nodes": [
+            "A",
+            "B",
+            "C"
+          ]
+        }
+      ]
+    }
+  },
+  "choiceForms": {
+    "account": {
+      "binding": {
+        "activityId": "task-example",
+        "activityRevision": 2,
+        "context": {
+          "creatureId": "work",
+          "sceneRevision": 7
+        },
+        "instanceId": null,
+        "productId": null,
+        "subscriptionGeneration": null,
+        "subscriptionRevision": null,
+        "targetCreatureId": "work"
+      },
+      "contractId": "synthetic-account.v1",
+      "contractVersion": 1,
+      "fields": [
+        {
+          "id": "customerAlias",
+          "label": "合成客户",
+          "options": [
+            {
+              "label": "demo-a",
+              "value": "demo-a"
+            },
+            {
+              "label": "demo-b",
+              "value": "demo-b"
+            }
+          ],
+          "readOnly": false,
+          "required": true,
+          "type": "choice",
+          "value": "demo-a"
+        },
+        {
+          "id": "accountType",
+          "label": "模拟账户类别",
+          "options": [
+            {
+              "label": "daily",
+              "value": "daily"
+            },
+            {
+              "label": "savings",
+              "value": "savings"
+            }
+          ],
+          "readOnly": false,
+          "required": true,
+          "type": "choice",
+          "value": "daily"
+        },
+        {
+          "id": "contactPreference",
+          "label": "模拟联系偏好",
+          "options": [
+            {
+              "label": "none",
+              "value": "none"
+            },
+            {
+              "label": "demo-email",
+              "value": "demo-email"
+            }
+          ],
+          "readOnly": false,
+          "required": true,
+          "type": "choice",
+          "value": "none"
+        }
+      ],
+      "formId": "form-215c9e1ff7f889a90de3358826801a6e42813b32dbf24d98fa76056f49b63f5a",
+      "schema": "choice-form.v1"
+    },
+    "route": {
+      "binding": {
+        "activityId": null,
+        "activityRevision": null,
+        "context": {
+          "creatureId": "work",
+          "sceneRevision": 7
+        },
+        "instanceId": "maps-example",
+        "productId": "demo.maps.v1",
+        "subscriptionGeneration": 2,
+        "subscriptionRevision": 3,
+        "targetCreatureId": "maps-example"
+      },
+      "contractId": "synthetic-route.v1",
+      "contractVersion": 1,
+      "fields": [
+        {
+          "id": "from",
+          "label": "合成起点",
+          "options": [
+            {
+              "label": "A",
+              "value": "A"
+            },
+            {
+              "label": "B",
+              "value": "B"
+            },
+            {
+              "label": "C",
+              "value": "C"
+            }
+          ],
+          "readOnly": false,
+          "required": true,
+          "type": "choice",
+          "value": "A"
+        },
+        {
+          "id": "to",
+          "label": "合成终点",
+          "options": [
+            {
+              "label": "A",
+              "value": "A"
+            },
+            {
+              "label": "B",
+              "value": "B"
+            },
+            {
+              "label": "C",
+              "value": "C"
+            }
+          ],
+          "readOnly": false,
+          "required": true,
+          "type": "choice",
+          "value": "C"
+        }
+      ],
+      "formId": "form-2fa18c3ceca066ed442b0132aeb66943ac186d04948ce6dbb49b0153020a155a",
+      "schema": "choice-form.v1"
+    }
+  }
+}

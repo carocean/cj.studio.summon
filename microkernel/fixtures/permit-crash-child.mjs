@@ -1,0 +1,12 @@
+import {join} from 'node:path';
+import {SnapshotStore} from '../src/store.js';
+import {HostIdentity} from '../src/identity.js';
+import {PermitLab} from '../src/permits.js';
+const [dir,point]=process.argv.slice(2),auth=new HostIdentity();
+const admin=auth.authenticate('host-admin'),owner=auth.authenticate('owner');
+const store=new SnapshotStore(join(dir,'core.sqlite'));
+const lab=new PermitLab(store,auth,join(dir,'sink.sqlite'),{clock:()=>100,testFault:point});
+lab.allocate(admin,'allocate',{allocationId:'budget',controller:'owner',calls:1,expiresAt:500});
+const ack=lab.prepare(owner,'prepare',{activityId:'work',allocationId:'budget',scenario:'synthetic-form'}).ack;
+lab.dispatch(owner,'send',{activityId:'work',expectedRevision:ack.revision,bindingDigest:ack.bindingDigest});
+throw new Error('fault point did not terminate');

@@ -2,17 +2,42 @@ import 'package:material_ui/material_ui.dart';
 import 'package:http/http.dart' as http;
 
 import 'api.dart';
+import 'creature_home.dart';
+import 'creature_workbench.dart';
 import 'discovery.dart';
+import 'subjects.dart';
+import 'sessions.dart';
+import 'preview_app.dart';
 
+// Explicit runtime integration point. It only requests presentation, not device
+// authorization or business execution. No microphone/camera adapter is auto-run.
+final creatureHomeController = CreatureHomeController();
 void main() => runApp(
-  MaterialApp(
+  const bool.fromEnvironment('SUMMON_PROTECTED_PREVIEW')
+      ? const PreviewApp()
+      : SummonApp(controller: creatureHomeController),
+);
+
+class SummonApp extends StatelessWidget {
+  const SummonApp({super.key, this.controller, this.client});
+  final CreatureHomeController? controller;
+  final http.Client? client;
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
     theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff385C58)),
       useMaterial3: true,
     ),
-    home: const SummonHome(),
-  ),
-);
+    home: CreatureHome(controller: controller, client: client),
+    routes: {
+      '/workbench': (_) => CreatureWorkbench(
+        client: client,
+        developerConsole: (_) => const SummonHome(),
+      ),
+    },
+  );
+}
 
 class SummonHome extends StatefulWidget {
   const SummonHome({super.key, this.client});
@@ -46,7 +71,9 @@ class _SummonHomeState extends State<SummonHome> {
   }
 
   void _saveDraft() {
-    if (_creature != null) _drafts[_creature!['id'] as String] = _input.text;
+    if (_creature != null) {
+      _drafts['${_creature!['id']}:$_session'] = _input.text;
+    }
   }
 
   void _scrollToLatest() {
@@ -83,6 +110,8 @@ class _SummonHomeState extends State<SummonHome> {
         setState(
           () => _status = e.status == 401
               ? '令牌无效，请断开后重新连接。'
+              : e.code == 'turn_limit'
+              ? '本会话已满。请打开“会话与历史”明确新建，旧记录会保留。'
               : '请求未完成：${e.code}。请检查状态后重试。',
         );
       }
@@ -115,6 +144,60 @@ class _SummonHomeState extends State<SummonHome> {
     });
   }
 
+  Future<void> _manageSessions() async {
+    final creatureId = _creature!['id'];
+    final selected = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) =>
+            SessionsPage(api: _api!, creatureId: creatureId as String),
+      ),
+    );
+    if (!mounted ||
+        selected == null ||
+        selected['creatureId'] != _creature?['id']) {
+      return;
+    }
+    setState(() {
+      _saveDraft();
+      _session = selected['id'] as String;
+      _turns = selected['turns'] as List;
+      _input.text = _drafts['$creatureId:$_session'] ?? '';
+      _status = '已切换会话，其他会话历史与草稿保持独立。';
+    });
+  }
+
+  Future<void> _manageSubjects() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => SubjectsPage(api: _api!)));
+    if (!mounted) return;
+    await _run(() async {
+      final api = _api!;
+      try {
+        final data = await api.request('/v1/creatures');
+        if (!mounted) return;
+        setState(() {
+          _saveDraft();
+          _creatures = data['creatures'] as List;
+          final matches = _creatures.where((c) => c['id'] == _creature?['id']);
+          if (matches.isEmpty) {
+            _creature = null;
+            _session = null;
+            _turns = [];
+            _input.clear();
+          } else {
+            _creature = Map<String, dynamic>.from(matches.first);
+          }
+          _services = [];
+          _status = '主体目录已刷新，当前能力以服务端状态为准。';
+        });
+      } catch (_) {
+        if (mounted) setState(_reset); // Never leave stale enabled controls.
+        rethrow;
+      }
+    });
+  }
+
   Future<void> _select(dynamic creature) async {
     if (_creature?['id'] == creature['id']) return;
     _saveDraft();
@@ -129,7 +212,7 @@ class _SummonHomeState extends State<SummonHome> {
       _creature = Map<String, dynamic>.from(creature);
       _services = [];
       _turns = s['turns'] as List? ?? [];
-      _input.text = _drafts[creature['id']] ?? '';
+      _input.text = _drafts['${creature['id']}:$_session'] ?? '';
       _status = '已恢复 ${creature['name']} 的会话';
     });
   }
@@ -173,7 +256,7 @@ class _SummonHomeState extends State<SummonHome> {
     setState(() {
       _turns = data['turns'] as List;
       _input.clear();
-      _drafts.remove(_creature!['id']);
+      _drafts.remove('${_creature!['id']}:$_session');
       _status = '本次交流已保存';
     });
     _scrollToLatest();
@@ -194,6 +277,20 @@ class _SummonHomeState extends State<SummonHome> {
     appBar: AppBar(
       title: const Text('Summon · 唤起'),
       actions: [
+        if (_api != null && _creature != null && _canTalk)
+          IconButton(
+            key: const Key('manage-sessions'),
+            tooltip: '会话与历史',
+            icon: const Icon(Icons.history),
+            onPressed: _busy ? null : _manageSessions,
+          ),
+        if (_api != null)
+          IconButton(
+            key: const Key('manage-subjects'),
+            tooltip: '主体与服务装配',
+            icon: const Icon(Icons.hub),
+            onPressed: _busy ? null : _manageSubjects,
+          ),
         if (_api != null)
           IconButton(
             key: const Key('global-call'),

@@ -17,10 +17,16 @@ const unavailableReason = (creature, service, context) => {
 // deterministic, NOT an LLM intent planner. Client context is only a simulation;
 // it must never become trusted geolocation or authorization evidence.
 export class ServiceScheduler {
-  constructor(runtime) { this.runtime = runtime; }
+  constructor(runtime, { openports = null } = {}) { this.runtime = runtime; this.openports = openports; }
   discover(ownerId, creatureId) {
     const c = this.runtime.getCreature(ownerId, creatureId);
     return catalog.filter(s => c.aibm.serviceAbilities.includes(s.id)).map(s => structuredClone(s));
+  }
+  #connectorReason(ownerId, creatureId, service) {
+    if (service.id === 'ecm.hello.read' && !this.openports) return 'business_bridge_unavailable';
+    if (!service.requiresConnector) return null;
+    const availability = this.runtime.connectorStatus(ownerId, creatureId, service.requiresConnector);
+    return availability.available ? null : availability.reason;
   }
   discoverAcross(ownerId, request = {}) {
     if (!request || typeof request !== 'object' || Array.isArray(request)) throw new DomainError(400, 'invalid_discovery_request');
@@ -36,7 +42,7 @@ export class ServiceScheduler {
     if (!service) throw new DomainError(404, 'service_not_found');
     for (const creature of this.runtime.listCreatures(ownerId)) {
       if (!creature.aibm.serviceAbilities.includes(serviceId)) continue;
-      const reason = unavailableReason(creature, service, context);
+      const reason = unavailableReason(creature, service, context) || this.#connectorReason(ownerId, creature.id, service);
       const candidate = { creatureId: creature.id, name: creature.name, service: structuredClone(service) };
       if (reason) base.unavailable.push({ ...candidate, reason });
       else base.candidates.push(candidate);
@@ -49,11 +55,21 @@ export class ServiceScheduler {
     const service = catalog.find(s => s.id === serviceId);
     if (!service) throw new DomainError(404, 'service_not_found');
     if (!c.aibm.serviceAbilities.includes(serviceId)) throw new DomainError(403, 'outside_service_boundary');
-    const reason = unavailableReason(c, service, context);
-    if (reason) throw new DomainError(reason === 'renderer_unavailable' ? 409 : 403, reason);
+    const reason = unavailableReason(c, service, context) || this.#connectorReason(ownerId, c.id, service);
+    if (reason) throw new DomainError(reason === 'outside_simulated_activity_space' ? 403 : 409, reason);
+    if (serviceId.startsWith('sense.')) throw new DomainError(400, 'use_perception_endpoint');
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new DomainError(400, 'invalid_arguments');
     let data;
-    if (serviceId === 'local.report') {
+    if (serviceId === 'ecm.hello.read') {
+      if (Object.keys(args).length) throw new DomainError(400, 'unsupported_bridge_arguments');
+      data = await this.openports.readHello();
+      const current = this.runtime.getCreature(ownerId, creatureId);
+      if (!current.aibm.serviceAbilities.includes(serviceId) || (current.authorizationVersion ?? 0) !== (c.authorizationVersion ?? 0)) throw new DomainError(409, 'authorization_changed');
+      const currentReason = unavailableReason(current, service, context);
+      if (currentReason) throw new DomainError(409, currentReason);
+    } else if (serviceId === 'device.preview') {
+      data = { notice: '模拟连接前提已满足，仅完成本地预检；未控制真实设备。', simulation: true, deviceActionExecuted: false, subjectId: c.id };
+    } else if (serviceId === 'local.report') {
       data = { notice: '本地即时回执；未执行外部动作。', subjectId: c.id };
     } else if (serviceId === 'capabilities.describe') {
       data = { name: c.name, services: this.discover(ownerId, c.id), boundary: structuredClone(c.aibm) };
@@ -68,7 +84,7 @@ export class ServiceScheduler {
       if (!item || !Number.isInteger(args.quantity) || args.quantity < 1 || args.quantity > 20) throw new DomainError(400, 'invalid_order_preview');
       data = { item: structuredClone(item), quantity: args.quantity, totalMinor: item.priceMinor * args.quantity, currency: 'USD', submitted: false, notice: '仅演示预览，未下单、未付款。' };
     }
-    return { creatureId, serviceId, status: 'completed', renderer: service.renderer, effect: service.effect, demo: serviceId === 'conversation' ? this.runtime.provider.mode === 'demo' : !['capabilities.describe', 'local.report'].includes(serviceId), data };
+    return { creatureId, serviceId, status: 'completed', renderer: service.renderer, effect: service.effect, demo: serviceId === 'conversation' ? this.runtime.provider.mode === 'demo' : !['capabilities.describe', 'local.report', 'ecm.hello.read'].includes(serviceId), data };
   }
   resolve(ownerId, creatureId, prompt) {
     this.runtime.getCreature(ownerId, creatureId);

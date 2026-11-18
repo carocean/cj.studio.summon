@@ -1,0 +1,160 @@
+{
+  "generator": "runtime InteractionSession + compileInteractionProgram; synthetic fixture only",
+  "now": 1000,
+  "initial": {
+    "changeCount": 0,
+    "context": {
+      "creatureId": "companion",
+      "sceneRevision": 1
+    },
+    "createdAt": 1000,
+    "draft": {
+      "programDigest": "sha256:a577555ebf7bfe7483e4371bd38f66d1bf9d9ee00090e017037001f60da1a775",
+      "revision": 0,
+      "schema": "interaction-draft.v1",
+      "values": {
+        "body": null,
+        "priority": null,
+        "subject": null
+      }
+    },
+    "expiresAt": 301000,
+    "lastNoteId": null,
+    "ownerId": "fixture-owner",
+    "program": {
+      "authorityGranted": false,
+      "declaration": {
+        "fields": [
+          {
+            "id": "subject",
+            "label": "标题",
+            "maxLength": 2,
+            "required": true,
+            "type": "text"
+          },
+          {
+            "id": "body",
+            "label": "补充",
+            "maxLength": 4000,
+            "required": false,
+            "type": "multiline"
+          },
+          {
+            "id": "priority",
+            "label": "优先级",
+            "options": [
+              {
+                "label": "普通",
+                "value": "normal"
+              },
+              {
+                "label": "高",
+                "value": "high"
+              }
+            ],
+            "required": true,
+            "type": "choice"
+          }
+        ],
+        "save": {
+          "primitive": "local-draft.save"
+        },
+        "schema": "temporary-interaction.v1",
+        "title": "临时 <表单> 😀"
+      },
+      "parentDigest": null,
+      "programDigest": "sha256:a577555ebf7bfe7483e4371bd38f66d1bf9d9ee00090e017037001f60da1a775",
+      "revision": 1,
+      "schema": "compiled-interaction.v1",
+      "semanticsVerified": false
+    },
+    "revision": 1,
+    "saveCount": 0,
+    "sessionId": "fixture-session",
+    "source": {
+      "kind": "host-declaration",
+      "modelId": null,
+      "referenceId": "fixture-request"
+    },
+    "sourceTrust": "host-supplied-metadata",
+    "status": "open"
+  },
+  "filled": {
+    "changeCount": 1,
+    "context": {
+      "creatureId": "companion",
+      "sceneRevision": 1
+    },
+    "createdAt": 1000,
+    "draft": {
+      "programDigest": "sha256:a577555ebf7bfe7483e4371bd38f66d1bf9d9ee00090e017037001f60da1a775",
+      "revision": 1,
+      "schema": "interaction-draft.v1",
+      "values": {
+        "body": "第一行\nsecond\tline",
+        "priority": "high",
+        "subject": "😀界"
+      }
+    },
+    "expiresAt": 301000,
+    "lastNoteId": null,
+    "ownerId": "fixture-owner",
+    "program": {
+      "authorityGranted": false,
+      "declaration": {
+        "fields": [
+          {
+            "id": "subject",
+            "label": "标题",
+            "maxLength": 2,
+            "required": true,
+            "type": "text"
+          },
+          {
+            "id": "body",
+            "label": "补充",
+            "maxLength": 4000,
+            "required": false,
+            "type": "multiline"
+          },
+          {
+            "id": "priority",
+            "label": "优先级",
+            "options": [
+              {
+                "label": "普通",
+                "value": "normal"
+              },
+              {
+                "label": "高",
+                "value": "high"
+              }
+            ],
+            "required": true,
+            "type": "choice"
+          }
+        ],
+        "save": {
+          "primitive": "local-draft.save"
+        },
+        "schema": "temporary-interaction.v1",
+        "title": "临时 <表单> 😀"
+      },
+      "parentDigest": null,
+      "programDigest": "sha256:a577555ebf7bfe7483e4371bd38f66d1bf9d9ee00090e017037001f60da1a775",
+      "revision": 1,
+      "schema": "compiled-interaction.v1",
+      "semanticsVerified": false
+    },
+    "revision": 2,
+    "saveCount": 0,
+    "sessionId": "fixture-session",
+    "source": {
+      "kind": "host-declaration",
+      "modelId": null,
+      "referenceId": "fixture-request"
+    },
+    "sourceTrust": "host-supplied-metadata",
+    "status": "open"
+  }
+}

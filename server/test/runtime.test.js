@@ -56,6 +56,10 @@ test('HTTP authentication and complete local round trip', async () => {
     const restored = await resumed.json();
     assert.equal(restored.id, session.id); assert.equal(restored.turns.length, 2);
     assert.equal(Object.hasOwn(restored, 'ownerId'), false);
+    const history = await (await fetch(base + '/v1/creatures/guide/sessions', {headers})).json();
+    assert.equal(history.sessions[0].id, session.id); assert.equal(history.sessions[0].turnCount, 1);
+    assert.equal(history.maxTurns, 50);
+    assert.equal((await fetch(base + '/v1/creatures/guide/sessions')).status, 401);
     assert.equal((await fetch(base + '/v1/sessions/resume', { method: 'POST', body: JSON.stringify({creatureId:'guide'}) })).status, 401);
     assert.equal((await fetch(base + '/v1/sessions', { method: 'POST', headers, body: '{' })).status, 400);
     assert.equal((await fetch(base + '/v1/sessions', { method: 'POST', headers, body: JSON.stringify({ message: 'a'.repeat(17000) }) })).status, 413);
@@ -81,4 +85,15 @@ test('development CORS is exact-origin opt-in and never removes authentication',
     assert.equal((await fetch(base + '/v1/creatures', { headers: { Origin: 'http://localhost:7357' } })).status, 401);
     assert.equal((await fetch(base + '/v1/creatures', { method: 'OPTIONS', headers: { Origin: 'http://localhost:9999' } })).status, 403);
   } finally { await new Promise(r => server.close(r)); }
+});
+
+test('compatible provider transmits AIBM personality without granting actions', async () => {
+  let body;
+  const provider=new CompatibleProvider({endpoint:'https://example.test',apiKey:'synthetic',model:'test',fetchImpl:async(_,options)=>{
+    body=JSON.parse(options.body);return {ok:true,json:async()=>({choices:[{message:{content:'reply'}}]})};
+  }});
+  await provider.respond({name:'X',description:'custom',aibm:{personality:'Only answer in French'}},[{role:'user',content:'hello'}]);
+  assert.ok(body.messages[0].content.includes('Only answer in French'));
+  assert.ok(body.messages[0].content.includes('不授予权限'));
+  assert.ok(body.messages[0].content.endsWith('不得声称执行现实动作、访问定位或完成工具调用。'));
 });
