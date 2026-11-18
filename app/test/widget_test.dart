@@ -285,6 +285,114 @@ void main() {
       expect(paths.any((p) => p.endsWith('calls')), isFalse);
     },
   );
+  testWidgets(
+    'returning from management refreshes lifecycle and disables paused conversation',
+    (tester) async {
+      var paused = false;
+      final c = creature('a');
+      final client = MockClient((r) async {
+        if (r.url.path.endsWith('creatures')) {
+          return jsonResponse({
+            'creatures': paused ? [] : [c],
+            'mode': 'demo',
+          });
+        }
+        if (r.url.path.endsWith('resume')) {
+          return jsonResponse({'id': 's', 'turns': []});
+        }
+        if (r.url.path.endsWith('transitions')) {
+          paused = true;
+          return jsonResponse({});
+        }
+        return jsonResponse({
+          'subjects': [
+            {...c, 'status': paused ? 'paused' : 'active'},
+          ],
+        });
+      });
+      await connect(tester, client);
+      await tester.tap(find.widgetWithText(ChoiceChip, '同行者'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('message')), 'saved draft');
+      await tester.tap(find.byKey(const Key('manage-subjects')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('toggle-lifecycle')));
+      await tester.tap(find.byKey(const Key('toggle-lifecycle')));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ChoiceChip, '同行者'), findsNothing);
+      expect(
+        tester.widget<IconButton>(find.byKey(const Key('send'))).onPressed,
+        isNull,
+      );
+      expect(find.text('saved draft'), findsNothing);
+    },
+  );
+  testWidgets(
+    'full conversation can explicitly rotate and reopen history with isolated drafts',
+    (tester) async {
+      var created = false;
+      final old = {
+        'id': 'old',
+        'creatureId': 'a',
+        'turns': [
+          {'role': 'assistant', 'content': 'old-history'},
+        ],
+      };
+      final client = MockClient((r) async {
+        if (r.url.path.endsWith('creatures')) {
+          return jsonResponse({
+            'creatures': [creature('a')],
+            'mode': 'demo',
+          });
+        }
+        if (r.url.path.endsWith('resume') || r.url.path == '/v1/sessions/old') {
+          return jsonResponse(old);
+        }
+        if (r.url.path == '/v1/creatures/a/sessions') {
+          return jsonResponse({
+            'maxTurns': 1,
+            'sessions': [
+              if (created) {'id': 'new', 'turnCount': 0},
+              {'id': 'old', 'turnCount': 1},
+            ],
+          });
+        }
+        if (r.url.path == '/v1/sessions') {
+          created = true;
+          return jsonResponse({'id': 'new', 'creatureId': 'a', 'turns': []});
+        }
+        if (r.url.path == '/v1/sessions/old/calls') {
+          return jsonResponse({'error': 'turn_limit'}, 429);
+        }
+        throw StateError('unexpected request');
+      });
+      await connect(tester, client);
+      await tester.tap(find.widgetWithText(ChoiceChip, '同行者'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('message')), 'old-draft');
+      await tester.tap(find.byKey(const Key('send')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('本会话已满'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('manage-sessions')));
+      await tester.pumpAndSettle();
+      expect(created, false);
+      await tester.tap(find.byKey(const Key('new-session')));
+      await tester.pumpAndSettle();
+      expect(created, true);
+      expect(find.text('old-draft'), findsNothing);
+      expect(find.text('old-history'), findsNothing);
+      await tester.enterText(find.byKey(const Key('message')), 'new-draft');
+      await tester.tap(find.byKey(const Key('manage-sessions')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('history-old')));
+      await tester.pumpAndSettle();
+      expect(find.text('old-draft'), findsOneWidget);
+      expect(find.text('old-history'), findsOneWidget);
+      expect(find.text('new-draft'), findsNothing);
+    },
+  );
   testWidgets('small mobile viewport does not overflow', (tester) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;
