@@ -1,0 +1,3 @@
+# Offline processor dependencies; model weights and native binaries are separate.
+vosk==0.3.45
+Pillow>=10,<14
