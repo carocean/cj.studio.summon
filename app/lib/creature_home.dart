@@ -241,9 +241,18 @@ class _CreatureHomeState extends State<CreatureHome>
   final _localTextDemand = TextInteractionDraft();
   TextInteractionDraft get _textDemand =>
       widget.controller?._textDemand ?? _localTextDemand;
+  bool get _usageAccess => widget.interactionAccess?.value ?? true;
   void _authenticationChanged() {
     _authEpoch++;
-    if (widget.interactionAccess?.value != true) _closeRestaurantMenu();
+    _usageEpoch++;
+    setState(() => _frequent = []);
+    if (!_usageAccess) {
+      _closeRestaurantMenu();
+    } else if (_surface == null) {
+      // Re-authenticating over a retained route does not contact the scene.
+      // The history reloads when the route returns to the home screen.
+      unawaited(_refreshUsage());
+    }
   }
 
   bool _foreground = true;
@@ -263,11 +272,16 @@ class _CreatureHomeState extends State<CreatureHome>
   }
 
   Future<void> _refreshUsage() async {
+    if (!_usageAccess) return;
     final round = ++_usageEpoch;
+    bool current() =>
+        mounted && _foreground && _usageAccess && round == _usageEpoch;
     try {
       for (final entry in _presentationPending.entries.toList()) {
+        if (!current()) return;
         try {
           final r = await _api.request('usage-query', {'commandId': entry.key});
+          if (!current()) return;
           if (r['commandId'] == entry.key &&
               ((r['status'] == 'completed' &&
                       r.length == 3 &&
@@ -285,8 +299,9 @@ class _CreatureHomeState extends State<CreatureHome>
           }
         } catch (_) {}
       }
+      if (!current()) return;
       final raw = await _api.request('usage');
-      if (!mounted || !_foreground || round != _usageEpoch) return;
+      if (!current()) return;
       final history = validatedUsage(raw);
       setState(
         () => _frequent = history == null
@@ -304,7 +319,8 @@ class _CreatureHomeState extends State<CreatureHome>
   bool get _hasRetainedWork =>
       _drafts.values.any((d) => d.presented && (d.dirty || d.pending != null));
   Future<void> _openFrequent(Map<String, dynamic> item) async {
-    if (!_foreground ||
+    if (!_usageAccess ||
+        !_foreground ||
         _surface != null ||
         _usageBusy ||
         _selectionPending != null ||
@@ -318,7 +334,7 @@ class _CreatureHomeState extends State<CreatureHome>
       );
       return;
     }
-    final epoch = _epoch;
+    final epoch = _epoch, auth = _authEpoch;
     setState(() {
       _usageBusy = true;
       _usageMessage = null;
@@ -327,6 +343,8 @@ class _CreatureHomeState extends State<CreatureHome>
       final state = await _api.request('state');
       if (!mounted ||
           !_current(epoch) ||
+          !_usageAccess ||
+          auth != _authEpoch ||
           _surface != null ||
           ModalRoute.of(context)?.isCurrent == false) {
         return;
@@ -358,6 +376,7 @@ class _CreatureHomeState extends State<CreatureHome>
         _selectionUntracked = false;
         _selectionPending = body;
         final result = await _api.request('usage-select', body);
+        if (!_current(epoch) || !_usageAccess || auth != _authEpoch) return;
         final ack = validatedUsageResult(result, body, selection: true);
         if (ack == null) throw const ApiFailure(502, 'invalid_usage_receipt');
         _selectionPending = null;
@@ -366,7 +385,9 @@ class _CreatureHomeState extends State<CreatureHome>
         await _refreshUsage();
       }
     } catch (_) {
-      if (mounted) setState(() => _usageMessage = '结果待核对，不自动重发。');
+      if (mounted && auth == _authEpoch && _usageAccess) {
+        setState(() => _usageMessage = '结果待核对，不自动重发。');
+      }
     } finally {
       if (mounted) setState(() => _usageBusy = false);
     }
@@ -374,14 +395,22 @@ class _CreatureHomeState extends State<CreatureHome>
 
   Future<void> _querySelection() async {
     final body = _selectionPending;
-    final epoch = _epoch, route = ModalRoute.of(context);
+    final epoch = _epoch, auth = _authEpoch, route = ModalRoute.of(context);
     bool valid() =>
         _current(epoch) &&
+        _usageAccess &&
+        auth == _authEpoch &&
         _surface == null &&
         identical(route, ModalRoute.of(context)) &&
         route?.isCurrent == true &&
         identical(body, _selectionPending);
-    if (body == null || _usageBusy || !_foreground || _surface != null) return;
+    if (body == null ||
+        !_usageAccess ||
+        _usageBusy ||
+        !_foreground ||
+        _surface != null) {
+      return;
+    }
     setState(() => _usageBusy = true);
     try {
       final r = await _api.request('usage-query', {
@@ -422,7 +451,8 @@ class _CreatureHomeState extends State<CreatureHome>
     Route<void> route,
     int epoch,
   ) {
-    if (_presentationPending.length >= 64) return;
+    if (!_usageAccess || _presentationPending.length >= 64) return;
+    final auth = _authEpoch;
     final body = <String, dynamic>{
       'commandId': usageCommandId(),
       'sessionId': view['sessionId'],
@@ -432,7 +462,11 @@ class _CreatureHomeState extends State<CreatureHome>
       'confirmation': 'presented-explicitly',
     };
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!_current(epoch) || !identical(route, _surface) || !route.isCurrent) {
+      if (!_current(epoch) ||
+          !_usageAccess ||
+          auth != _authEpoch ||
+          !identical(route, _surface) ||
+          !route.isCurrent) {
         return;
       }
       _presentationPending[body['commandId']] = body;
@@ -488,7 +522,7 @@ class _CreatureHomeState extends State<CreatureHome>
     if (old.interactionAccess != widget.interactionAccess) {
       old.interactionAccess?.removeListener(_authenticationChanged);
       widget.interactionAccess?.addListener(_authenticationChanged);
-      _authEpoch++;
+      _authenticationChanged();
     }
     if ((old.restaurantDevTarget != null ||
             widget.restaurantDevTarget != null) &&
@@ -1331,7 +1365,8 @@ class _CreatureHomeState extends State<CreatureHome>
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: const Color(0xfff7f6f2),
-    bottomNavigationBar: _frequent.isEmpty && _selectionPending == null
+    bottomNavigationBar:
+        !_usageAccess || (_frequent.isEmpty && _selectionPending == null)
         ? null
         : SafeArea(
             child: Padding(
@@ -1349,7 +1384,9 @@ class _CreatureHomeState extends State<CreatureHome>
                             ? null
                             : () => _openFrequent(item),
                         child: Text(
-                          '${item['kind'] == 'interaction-session' ? '临时 · ' : ''}${item['label']}',
+                          item['kind'] == 'interaction-session'
+                              ? '临时 · 生成内容'
+                              : item['label'] as String,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 12),
