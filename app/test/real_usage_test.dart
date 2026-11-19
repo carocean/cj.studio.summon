@@ -47,6 +47,57 @@ Map<String, dynamic> receipt(Map body, {bool selection = false}) => {
         },
 };
 void main() {
+  testWidgets('generated titles do not reach home and auth retires history', (
+    t,
+  ) async {
+    final access = ValueNotifier<bool>(true);
+    final controller = CreatureHomeController();
+    final pending = Completer<http.Response>();
+    final first = history([
+      item('interaction-session', 'draft', 'private generated title'),
+    ]);
+    var reads = 0;
+    final client = MockClient.streaming((r, _) async {
+      expect(r.url.path.split('/').last, 'usage');
+      reads++;
+      final response = switch (reads) {
+        1 => home.response(first),
+        2 => await pending.future,
+        _ => home.response(history([])),
+      };
+      return http.StreamedResponse(
+        Stream.value(response.bodyBytes),
+        response.statusCode,
+      );
+    });
+    await t.pumpWidget(
+      MaterialApp(
+        home: CreatureHome(
+          controller: controller,
+          client: client,
+          interactionAccess: access,
+        ),
+      ),
+    );
+    await home.idle(t);
+    expect(find.text('临时 · 生成内容'), findsOneWidget);
+    expect(find.textContaining('private generated title'), findsNothing);
+    final inflight = controller.refreshUsage();
+    await home.idle(t);
+    expect(reads, 2);
+    access.value = false;
+    await home.idle(t);
+    expect(find.text('临时 · 生成内容'), findsNothing);
+    access.value = true;
+    await home.idle(t);
+    expect(reads, 3);
+    pending.complete(home.response(first));
+    await home.idle(t);
+    await inflight;
+    expect(find.text('临时 · 生成内容'), findsNothing);
+    await t.pumpWidget(const SizedBox());
+    access.dispose();
+  });
   test(
     'history closed schema, actual threshold, no saved-note or malformed label',
     () {
